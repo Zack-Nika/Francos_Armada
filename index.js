@@ -90,8 +90,8 @@ client.on('guildMemberAdd', async (member) => {
 
       // Send alert message
       const alertMsg = await alertChannel.send({
-        content: `**# New member joined:** <@${member.id}>`,
-        components: [row]
+  content: `**# Member Jdid Ajew 🙋‍♂️** <@${member.id}>`,
+  components: [row]
       });
       // Delete after 10 seconds
       setTimeout(() => {

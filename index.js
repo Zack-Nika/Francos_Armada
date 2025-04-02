@@ -145,14 +145,14 @@ client.on('messageCreate', async (message) => {
 
   const targetMember = message.mentions.members?.first();
   if (!targetMember) {
-    return message.reply("# عفاك طاغي المستخدم لي باغي تحقق منو: `+VB @username` أو `+VG @username`.").then(msg => {
+    return message.reply("# Khasek Tagi Chi User La Bghiti Tverifih: `+VB @username` أو `+VG @username`.").then(msg => {
       setTimeout(() => msg.delete().catch(()=>{}), 5000);
     });
   }
   const authorMember = message.member;
   const isAuthorVerificator = authorMember.roles.cache.has(ROLE_VERIFICATOR) || authorMember.roles.cache.has(ROLE_LEADER_VERIFICATOR);
   if (!isAuthorVerificator) {
-    return message.reply("# معندكش الحق باش تحقق من الناس.").then(msg => {
+    return message.reply("# Ma3endksh L7a9 Tverifi Users.").then(msg => {
       setTimeout(() => msg.delete().catch(()=>{}), 5000);
     });
   }
@@ -169,7 +169,7 @@ client.on('messageCreate', async (message) => {
     await targetMember.roles.add(newRoleId);
   } catch (err) {
     console.error(`Error assigning roles to ${targetMember.user.tag}:`, err);
-    return message.reply("# مقدرتش نعطي Verified Role لهاد العضو ❌️.").catch(()=>{});
+    return message.reply("# M9dertsh N3ti Verified Role Lhad User  ❌️.").catch(()=>{});
   }
 
   // Move user to a populated voice channel if they are in the verification channel
@@ -204,7 +204,7 @@ client.on('messageCreate', async (message) => {
   fs.writeFileSync(dataFile, JSON.stringify(verificationData, null, 2));
 
   // Confirmation message
-  message.reply(`${targetMember.user.username} # تم التحقق منو ك: **${genderText}**! ✅`).catch(()=>{});
+  message.reply(`${targetMember.user.username} # Was Verified As: **${genderText}**! ✅`).catch(()=>{});
 });
 
 // Event: Slash command interaction (/topverificator)

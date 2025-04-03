@@ -1,8 +1,9 @@
 // index.js
-// MBC Super Bot using Discord.js v14 with enhanced verification notifications,
-// auto-role removal on jail, modified One-Tap VC naming & ownership/command restrictions,
-// per-user reject/permit functionality in one-tap channels,
-// and new DM messages and plain text notifications with extended timeouts.
+// MBC Super Bot using Discord.js v14 with enhanced features:
+// - New DM messages on join and on verification.
+// - Plain text verification notification (big bold text) that disappears after 8 seconds.
+// - One-Tap VC with per-user reject/permit functionality.
+// - Verification system now prevents duplicate verification channels for the same user.
 
 require('dotenv').config();
 const {
@@ -13,7 +14,7 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  EmbedBuilder,
+  EmbedBuilder, // used only if needed elsewhere
   Events,
   REST,
   Routes,
@@ -33,7 +34,7 @@ const client = new Client({
   partials: [Partials.Channel],
 });
 
-// In-memory data
+// In-memory data stores
 const verificationSessions = new Map(); // key: VC id; value: { userId, assignedVerificator, rejected }
 const onetapSessions = new Map();       // key: VC id; value: { owner, rejectedUsers: [] }
 const jailData = new Map();             // key: user id; value: jail reason
@@ -43,6 +44,7 @@ const jailData = new Map();             // key: user id; value: jail reason
 // -----------------------
 client.commands = new Collection();
 const commands = [
+  // One-tap VC commands – /reject and /perm now take a user option.
   new SlashCommandBuilder().setName('kick').setDescription('Kick a user from your private VC')
     .addUserOption(option => option.setName('target').setDescription('User to kick').setRequired(true)),
   new SlashCommandBuilder().setName('reject').setDescription('Reject a user from joining this tap VC')
@@ -58,14 +60,18 @@ const commands = [
     .addStringOption(option => option.setName('text').setDescription('New name').setRequired(true)),
   new SlashCommandBuilder().setName('status').setDescription('Set a status for your VC')
     .addStringOption(option => option.setName('text').setDescription('Status text').setRequired(true)),
+  // Ban tools
   new SlashCommandBuilder().setName('unban').setDescription('Unban a user')
     .addStringOption(option => option.setName('userid').setDescription('User ID to unban').setRequired(true)),
   new SlashCommandBuilder().setName('binfo').setDescription('Show total bans'),
+  // Jail commands
   new SlashCommandBuilder().setName('jinfo').setDescription('Show jail reason for a user')
     .addStringOption(option => option.setName('userid').setDescription('User ID').setRequired(true)),
   new SlashCommandBuilder().setName('jailed').setDescription('Show how many users are jailed'),
+  // Stats commands
   new SlashCommandBuilder().setName('topvrf').setDescription('Show top verificators'),
   new SlashCommandBuilder().setName('toponline').setDescription('Show most online users'),
+  // Smart help command
   new SlashCommandBuilder().setName('help').setDescription('Show available commands for you'),
 ];
 
@@ -100,7 +106,7 @@ client.on(Events.GuildMemberAdd, async member => {
   try {
     const unverifiedRole = member.guild.roles.cache.get(process.env.ROLE_UNVERIFIED);
     if (unverifiedRole) await member.roles.add(unverifiedRole);
-    // DM new member with welcome message and mention.
+    // DM welcome message on join (with mention)
     await member.send(`# Mar7ba Bik Fi  ☆ MBC ☆  Ahsen Sever Fl Maghrib 🇲🇦 Daba Ayje 3ndk Chi Verificator ✅️ Tania Wehda ❤️ ${member.toString()}`);
   } catch (err) {
     console.error('Error on GuildMemberAdd:', err);
@@ -117,17 +123,26 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
   if (newState.channelId === process.env.VOICE_VERIFICATION) {
     try {
       const member = newState.member;
+
+      // Check if the user already has an active verification session.
+      const alreadyInSession = [...verificationSessions.values()].some(session => session.userId === member.id);
+      if (alreadyInSession) {
+        console.log(`User ${member.displayName} already has a verification session. Skipping creation.`);
+        return;
+      }
+
+      // Create a new verification voice channel
       const tempVC = await guild.channels.create({
         name: `Verify - ${member.displayName}`,
-        type: 2,
+        type: 2, // Voice channel
         parent: newState.channel.parentId,
-        permissionOverwrites: []
+        permissionOverwrites: [] // default permissions
       });
       console.log(`Created verification VC: ${tempVC.name} for ${member.displayName}`);
       await member.voice.setChannel(tempVC);
       verificationSessions.set(tempVC.id, { userId: member.id, assignedVerificator: null, rejected: false });
-      
-      // Send a plain text notification (big bold text) with join button
+
+      // Send a plain text verification notification to the alert channel (disappears after 8 seconds)
       const alertChannel = guild.channels.cache.get(process.env.CHANNEL_VERIFICATION_ALERT);
       if (alertChannel) {
         console.log(`Sending verification notification in ${alertChannel.name}`);
@@ -138,8 +153,7 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
         const row = new ActionRowBuilder().addComponents(joinButton);
         const textNotification = "**# MEMBER JDID AJEW 🙋‍♂️**";
         const alertMsg = await alertChannel.send({ content: textNotification, components: [row] });
-        // Increase notification lifetime to 10 seconds
-        setTimeout(() => { alertMsg.delete().catch(console.error); }, 10000);
+        setTimeout(() => { alertMsg.delete().catch(console.error); }, 8000);
       } else {
         console.error("Alert channel not found. Check CHANNEL_VERIFICATION_ALERT in .env");
       }
@@ -255,7 +269,7 @@ client.on(Events.InteractionCreate, async interaction => {
     const memberVC = interaction.member.voice.channel;
     if (!memberVC) return interaction.reply({ content: "You must be in a voice channel to use this command.", ephemeral: true });
     
-    // Handle /reject and /perm only in one-tap channels (per-user)
+    // ----- Handle /reject and /perm in one-tap channels (per-user) -----
     if (commandName === "reject") {
       if (!onetapSessions.has(memberVC.id)) {
         return interaction.reply({ content: "This command only works in one-tap channels.", ephemeral: true });
@@ -292,7 +306,7 @@ client.on(Events.InteractionCreate, async interaction => {
       }
     }
     
-    // Other one-tap commands (owner-restricted)
+    // ----- Other One-Tap Commands (owner-restricted) -----
     const oneTapCommands = ["kick", "lock", "unlock", "limit", "name", "status", "claim"];
     if (onetapSessions.has(memberVC.id) && oneTapCommands.includes(commandName)) {
       let tapSession = onetapSessions.get(memberVC.id);
@@ -452,14 +466,13 @@ client.on(Events.MessageCreate, async message => {
         await memberToVerify.roles.add(process.env.ROLE_VERIFIED_GIRL);
         verifiedRoleName = "Verified Girl";
       }
-      // DM verified message
+      // Send DM to the verified user:
       await memberToVerify.send("# No Toxic Guys Here ❌️☢️ 7na Hna Bash Nchilliw Wnstmt3o Bw9tna ...Mar7ba Bik Mara Akhra ⚘️♥️");
       message.channel.send(`<@${memberToVerify.id}> was verified as ${verifiedRoleName} successfully!`);
       const activeVC = message.guild.channels.cache.filter(ch => ch.type === 2 && ch.id !== sessionId && ch.members.size > 0).first();
       if (activeVC) {
         await memberToVerify.voice.setChannel(activeVC);
       }
-      // Extend auto deletion timeout to 60 seconds so new verificators have time to join.
       setTimeout(async () => {
         const verifVC = message.guild.channels.cache.get(sessionId);
         if (verifVC) {

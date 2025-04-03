@@ -1,20 +1,5 @@
 // index.js
-// MBC Super Bot using Discord.js v14
-//
-// CHANGES:
-// - The verification alert embed now only shows a big/bold title
-//   "# Member Jdid Ajew Arrived 🙋‍♂️" (or any text you want) and the "Join Verification" button.
-// - No user mention or user ID is displayed in that notification.
-//
-// OTHER FEATURES REMAIN:
-// 1. Verification system (joins, +boy/+girl, auto-moving verified user, etc.).
-// 2. One-Tap channel creation (VOICE_ONETAP).
-// 3. Jail system, ban tools, stats commands, and /help.
-//
-// IMPORTANT: Your .env file must have:
-// DISCORD_TOKEN, GUILD_ID, CLIENT_ID, ADMIN_ROLE, ROLE_UNVERIFIED, ROLE_VERIFIED_BOY,
-// ROLE_VERIFIED_GIRL, ROLE_VERIFICATOR, ROLE_LEADER_VERIFICATOR, ROLE_JAILED,
-// VOICE_VERIFICATION, VOICE_JAIL, CHANNEL_VERIFICATION_ALERT, VOICE_ONETAP
+// MBC Super Bot using Discord.js v14 with enhanced verification notifications
 
 require('dotenv').config();
 const {
@@ -48,7 +33,7 @@ const client = new Client({
 // In-memory data
 const verificationSessions = new Map(); // key: temp VC id; value: { userId, assignedVerificator, rejected }
 const onetapSessions = new Map();       // key: temp VC id; value: owner userId
-const jailData = new Map();            // key: user id; value: jail reason
+const jailData = new Map();             // key: user id; value: jail reason
 
 // -----------------------
 // SLASH COMMANDS SETUP
@@ -103,7 +88,6 @@ const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
 // -----------------------
 client.once(Events.ClientReady, () => {
   console.log(`Logged in as ${client.user.tag}`);
-  // Debug
   console.log('VOICE_VERIFICATION:', process.env.VOICE_VERIFICATION);
   console.log('VOICE_ONETAP:', process.env.VOICE_ONETAP);
   console.log('CHANNEL_VERIFICATION_ALERT:', process.env.CHANNEL_VERIFICATION_ALERT);
@@ -132,6 +116,7 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
   if (newState.channelId === process.env.VOICE_VERIFICATION) {
     try {
       const member = newState.member;
+      // Create the temporary verification voice channel
       const tempVC = await guild.channels.create({
         name: `Verify - ${member.user.username}`,
         type: 2, // Voice channel
@@ -140,22 +125,32 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
       });
       console.log(`Created verification VC: ${tempVC.name} for ${member.user.username}`);
       await member.voice.setChannel(tempVC);
+      // Save the session with no verificator assigned yet
       verificationSessions.set(tempVC.id, { userId: member.id, assignedVerificator: null, rejected: false });
-
-      // Send minimal embed notification: no user mention, just big text + button.
+      
+      // Send an alert notification to the alert channel with a super bold embed and join button
       const alertChannel = guild.channels.cache.get(process.env.CHANNEL_VERIFICATION_ALERT);
       if (alertChannel) {
         console.log(`Sending verification alert in ${alertChannel.name}`);
+        
+        // Build a prominent button for one-click join
         const joinButton = new ButtonBuilder()
           .setCustomId(`join_verification_${tempVC.id}`)
-          .setLabel("Join Verification")
+          .setLabel("🚀 Join Verification")
           .setStyle(ButtonStyle.Primary);
         const row = new ActionRowBuilder().addComponents(joinButton);
-        // Title only, no user mention
+        
+        // Create a BIG, bold embed using markdown (Discord doesn't allow actual font size changes)
         const embed = new EmbedBuilder()
-          .setTitle("Member Jdid Ajew 🙋‍♂️")  // big, bold text
+          .setTitle("**MEMBER JDID AJEW 🙋‍♂️**")
+          .setDescription("Click the button below to join the verification VC instantly!")
           .setColor(0x00AE86);
-        await alertChannel.send({ embeds: [embed], components: [row] });
+        
+        // Send the alert message and auto-delete it after 6 seconds to avoid spam
+        const alertMsg = await alertChannel.send({ embeds: [embed], components: [row] });
+        setTimeout(() => {
+          alertMsg.delete().catch(console.error);
+        }, 6000);
       } else {
         console.error("Alert channel not found. Check CHANNEL_VERIFICATION_ALERT in .env");
       }
@@ -238,6 +233,7 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
 // INTERACTION HANDLER
 // -----------------------
 client.on(Events.InteractionCreate, async interaction => {
+  // Button Interaction for Verification Join
   if (interaction.isButton() && interaction.customId.startsWith("join_verification_")) {
     const vcId = interaction.customId.split("_").pop();
     const session = verificationSessions.get(vcId);
@@ -245,27 +241,35 @@ client.on(Events.InteractionCreate, async interaction => {
       return interaction.reply({ content: "This verification session has expired.", ephemeral: true });
     }
     const member = interaction.guild.members.cache.get(interaction.user.id);
-    // If not in a voice channel, send an invite link
+    
+    // If the verificator is NOT in a voice channel, create an invite link to the verification VC
     if (!member.voice.channel) {
       try {
         const channel = interaction.guild.channels.cache.get(vcId);
         const invite = await channel.createInvite({ maxAge: 300, maxUses: 1 });
         return interaction.reply({
-          content: `You are not in a voice channel. Please join the verification VC using this invite link: ${invite.url}`,
+          content: `You're not in a voice channel. Use this invite link to join the verification VC: ${invite.url}`,
           ephemeral: true
         });
       } catch (e) {
-        return interaction.reply({ content: "Please join a voice channel and click again.", ephemeral: true });
+        return interaction.reply({ content: "Oops, something went wrong. Please join a voice channel and try again.", ephemeral: true });
       }
     }
-    // If in a voice channel, move them
+    
+    // If the verificator is in a voice channel but not already in the verification VC, move them
     if (member.voice.channelId !== vcId) {
       await member.voice.setChannel(vcId);
     }
-    session.assignedVerificator = interaction.user.id;
-    verificationSessions.set(vcId, session);
-    return interaction.reply({ content: "You've joined the verification room.", ephemeral: true });
+    
+    // If no verificator has been assigned yet, assign the current user
+    if (!session.assignedVerificator) {
+      session.assignedVerificator = interaction.user.id;
+      verificationSessions.set(vcId, session);
+    }
+    
+    return interaction.reply({ content: "You've joined the verification room. You can now verify the user with +boy or +girl.", ephemeral: true });
   }
+  // Slash Command Interactions
   else if (interaction.isChatInputCommand()) {
     const { commandName } = interaction;
     const memberVC = interaction.member.voice.channel;
@@ -427,7 +431,7 @@ client.on(Events.MessageCreate, async message => {
       }
       // DM user
       await memberToVerify.send("Welcome to our server! You were verified successfully. Enjoy your time and get to know new people.");
-      // Log
+      // Log verification in the channel
       message.channel.send(`<@${memberToVerify.id}> was verified as ${verifiedRoleName} Successfully!`);
       // Move user to an active VC if possible
       const activeVC = message.guild.channels.cache

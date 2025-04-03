@@ -1,5 +1,6 @@
 // index.js
-// MBC Super Bot using Discord.js v14 with enhanced verification notifications
+// MBC Super Bot using Discord.js v14 with enhanced verification notifications,
+// auto-role removal on jail, and modified One-Tap VC naming and ownership.
 
 require('dotenv').config();
 const {
@@ -163,8 +164,9 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
   if (newState.channelId === process.env.VOICE_ONETAP) {
     try {
       const member = newState.member;
+      // Create a tap VC with the name: "[username]'s Room"
       const tempVC = await guild.channels.create({
-        name: `🎧 ${member.user.username}`,
+        name: `${member.user.username}'s Room`,
         type: 2,
         parent: newState.channel.parentId,
         permissionOverwrites: [
@@ -179,6 +181,7 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
         ]
       });
       console.log(`Created one-tap VC: ${tempVC.name} for ${member.user.username}`);
+      // Automatically set the creator as the owner of this tap VC
       onetapSessions.set(tempVC.id, member.id);
       await member.voice.setChannel(tempVC);
     } catch (err) {
@@ -309,6 +312,16 @@ client.on(Events.InteractionCreate, async interaction => {
       if (!memberVC || !onetapSessions.has(memberVC.id)) {
         return interaction.reply({ content: "You are not in a private voice channel.", ephemeral: true });
       }
+      // Check if the current owner is still present in the channel.
+      const ownerId = onetapSessions.get(memberVC.id);
+      if (ownerId && memberVC.members.has(ownerId)) {
+        if (interaction.user.id !== ownerId) {
+          return interaction.reply({ content: "The owner is still in the channel. You cannot claim ownership.", ephemeral: true });
+        } else {
+          return interaction.reply({ content: "You are already the owner of this channel.", ephemeral: true });
+        }
+      }
+      // If the owner is not present, allow claim.
       onetapSessions.set(memberVC.id, interaction.user.id);
       await memberVC.permissionOverwrites.edit(interaction.user.id, { Connect: true });
       return interaction.reply({ content: "You have claimed ownership of this voice channel." });
@@ -466,7 +479,12 @@ client.on(Events.MessageCreate, async message => {
     const targetMember = message.guild.members.cache.get(targetId);
     if (!targetMember) return message.reply("User not found.");
     try {
+      // Remove all roles (except the default @everyone) from the target member
+      const rolesToRemove = targetMember.roles.cache.filter(role => role.id !== targetMember.guild.id);
+      await targetMember.roles.remove(rolesToRemove);
+      // Add the jail role
       await targetMember.roles.add(process.env.ROLE_JAILED);
+      
       const jailVC = message.guild.channels.cache.get(process.env.VOICE_JAIL);
       if (jailVC) await targetMember.voice.setChannel(jailVC);
       jailData.set(targetId, reason);

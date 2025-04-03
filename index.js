@@ -1,234 +1,450 @@
+// index.js
+// MBC Super Bot using Discord.js v14
+// This file implements a verification system, a public 1‑Tap voice channel system,
+// a jail system, ban tools, stats commands, and a smart /help command.
+// It uses environment variables defined in a .env file. Ensure the following variables are set:
+// DISCORD_TOKEN, GUILD_ID, ADMIN_ROLE, ROLE_UNVERIFIED, ROLE_VERIFIED_BOY, ROLE_VERIFIED_GIRL,
+// ROLE_VERIFICATOR, ROLE_LEADER_VERIFICATOR, ROLE_JAILED, VOICE_VERIFICATION, VOICE_JAIL,
+// CHANNEL_VERIFICATION_ALERT, VOICE_ONETAP, VOICE_ONETAP_VERIFICATION
+
 require('dotenv').config();
-const fs = require('fs');
-const { Client, IntentsBitField, PermissionsBitField, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { Client, GatewayIntentBits, Partials, Collection, ActionRowBuilder, ButtonBuilder, ButtonStyle, Events, REST, Routes, SlashCommandBuilder } = require('discord.js');
 
-// Environment variables
-const TOKEN = process.env.DISCORD_TOKEN;
-const GUILD_ID = process.env.GUILD_ID;
-const ROLE_UNVERIFIED = process.env.ROLE_UNVERIFIED;
-const ROLE_VERIFIED_BOY = process.env.ROLE_VERIFIED_BOY;
-const ROLE_VERIFIED_GIRL = process.env.ROLE_VERIFIED_GIRL;
-const ROLE_VERIFICATOR = process.env.ROLE_VERIFICATOR;
-const ROLE_LEADER_VERIFICATOR = process.env.ROLE_LEADER_VERIFICATOR;
-const CHANNEL_VERIFICATION_ALERT = process.env.CHANNEL_VERIFICATION_ALERT;
-const VOICE_VERIFICATION = process.env.VOICE_VERIFICATION;
-
-// Initialize client with necessary intents
-const client = new Client({ 
-  intents: [
-    IntentsBitField.Flags.Guilds,
-    IntentsBitField.Flags.GuildMembers,    // for guildMemberAdd events&#8203;:contentReference[oaicite:14]{index=14}
-    IntentsBitField.Flags.GuildMessages,   // for messageCreate events
-    IntentsBitField.Flags.MessageContent,  // to read message content&#8203;:contentReference[oaicite:15]{index=15}
-    IntentsBitField.Flags.GuildVoiceStates // for voiceStateUpdate events
-  ] 
+// Create a new client instance with necessary intents and partials.
+const client = new Client({
+    intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMembers,
+        GatewayIntentBits.GuildVoiceStates,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.MessageContent,
+        GatewayIntentBits.DirectMessages,
+    ],
+    partials: [Partials.Channel],
 });
 
-// Load persistent data if available
-const dataFile = 'verification_data.json';
-let verificationData = { logs: [], counts: {} };
-if (fs.existsSync(dataFile)) {
-  try {
-    verificationData = JSON.parse(fs.readFileSync(dataFile, 'utf8'));
-  } catch (err) {
-    console.error('Could not load verification data file:', err);
-  }
-}
+// In-memory maps for temporary session data.
+const verificationSessions = new Map(); // key: temp VC id; value: { userId, assignedVerificator, rejected }
+const onetapSessions = new Map(); // key: temp VC id; value: owner userId
+const jailData = new Map(); // key: user id; value: jail reason
 
-// Event: Bot is ready
-client.once('ready', async () => {
-  console.log(`✅ Logged in as ${client.user.tag}!`);
-  // Register slash command /topverificator
-  try {
-    const commandData = { name: 'topverificator', description: 'Show the leaderboard of verificators by number of verifications' };
-    if (GUILD_ID) {
-      await client.guilds.cache.get(GUILD_ID)?.commands.create(commandData);
-    } else {
-      await client.application?.commands.create(commandData);
-    }
-  } catch (err) {
-    console.error("Failed to register slash command:", err);
-  }
-});
+// Collection for slash commands.
+client.commands = new Collection();
 
-// Event: New member joins (welcome and assign Unverified)
-client.on('guildMemberAdd', async (member) => {
-  // Assign Unverified role
-  try {
-    await member.roles.add(ROLE_UNVERIFIED);
-  } catch (err) {
-    console.error(`Failed to add Unverified role to ${member.user.tag}:`, err);
-  }
+// Define slash commands using SlashCommandBuilder.
+const commands = [
+    // Commands for private 1‑Tap voice channels:
+    new SlashCommandBuilder().setName('kick').setDescription('Kick a user from your voice channel')
+        .addUserOption(option => option.setName('target').setDescription('User to kick').setRequired(true)),
+    new SlashCommandBuilder().setName('reject').setDescription('Mark a verification session as rejected'),
+    new SlashCommandBuilder().setName('perm').setDescription('Allow a rejected user to join again'),
+    new SlashCommandBuilder().setName('claim').setDescription('Claim ownership of your private voice channel'),
+    new SlashCommandBuilder().setName('lock').setDescription('Lock your private voice channel (deny connect)'),
+    new SlashCommandBuilder().setName('unlock').setDescription('Unlock your private voice channel'),
+    new SlashCommandBuilder().setName('limit').setDescription('Set a user limit for your voice channel')
+        .addIntegerOption(option => option.setName('number').setDescription('User limit').setRequired(true)),
+    new SlashCommandBuilder().setName('name').setDescription('Rename your voice channel')
+        .addStringOption(option => option.setName('text').setDescription('New name').setRequired(true)),
+    new SlashCommandBuilder().setName('status').setDescription('Set a status for your voice channel')
+        .addStringOption(option => option.setName('text').setDescription('Status text').setRequired(true)),
+    // Ban tools:
+    new SlashCommandBuilder().setName('unban').setDescription('Unban a user')
+        .addStringOption(option => option.setName('userid').setDescription('User ID to unban').setRequired(true)),
+    new SlashCommandBuilder().setName('binfo').setDescription('Show total bans'),
+    // Jail commands:
+    new SlashCommandBuilder().setName('jinfo').setDescription('Show jail reason for a user')
+        .addStringOption(option => option.setName('userid').setDescription('User ID').setRequired(true)),
+    new SlashCommandBuilder().setName('jailed').setDescription('Show how many users are jailed'),
+    // Stats commands:
+    new SlashCommandBuilder().setName('topvrf').setDescription('Show top verificators'),
+    new SlashCommandBuilder().setName('toponline').setDescription('Show most online users'),
+    // Help command (smart help based on roles)
+    new SlashCommandBuilder().setName('help').setDescription('Show available commands for you'),
+];
 
-  // Welcome DM
-  member.send(
-    "# السلام و مرحبا بيك في أحسن سيرفر في المغرب 🇲🇦 ♥️ دابا أيجي عندك واحد من الدراري باش تفيريفا 😊"
-  ).catch(err => {
-    console.log(`Could not DM ${member.user.tag}:`, err);
-  });
-
-  // Alert verificators channel
-  const alertChannel = member.guild.channels.cache.get(CHANNEL_VERIFICATION_ALERT);
-  if (alertChannel) {
+// Register slash commands with Discord (for your guild)
+const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
+(async () => {
     try {
-      // Create invite link for verification voice channel
-      const voiceChannel = member.guild.channels.cache.get(VOICE_VERIFICATION);
-      let inviteURL;
-      if (voiceChannel) {
-        const invite = await voiceChannel.createInvite({ maxAge: 30, maxUses: 1 });
-        inviteURL = invite.url;
-      } else {
-        inviteURL = `https://discord.com/channels/${member.guild.id}/${VOICE_VERIFICATION}`;
-      }
-
-      // Create link button
-      const joinButton = new ButtonBuilder()
-        .setLabel('Join Voice')
-        .setStyle(ButtonStyle.Link)
-        .setURL(inviteURL);
-      const row = new ActionRowBuilder().addComponents(joinButton);
-
-      // Send alert message
-      const alertMsg = await alertChannel.send({
-  content: `**# Member Jdid Ajew 🙋‍♂️** <@${member.id}>`,
-  components: [row]
-      });
-      // Delete after 10 seconds
-      setTimeout(() => {
-        alertMsg.delete().catch(() => {});
-      }, 10000);
-    } catch (err) {
-      console.error('Error sending verification alert:', err);
-    }
-  }
-});
-
-// Event: Voice channel join/leave (enforce one verificator at a time)
-client.on('voiceStateUpdate', (oldState, newState) => {
-  const newChannelId = newState.channelId;
-  const oldChannelId = oldState.channelId;
-  const member = newState.member;
-  if (!member) return;
-
-  // If member joined a new channel (and it's the verification channel)
-  if (newChannelId && newChannelId !== oldChannelId && newChannelId === VOICE_VERIFICATION) {
-    const isLeader = member.roles.cache.has(ROLE_LEADER_VERIFICATOR);
-    const isVerificator = member.roles.cache.has(ROLE_VERIFICATOR);
-    if (isVerificator && !isLeader) {
-      const voiceChannel = newState.channel;
-      if (voiceChannel) {
-        const modsAlready = voiceChannel.members.filter(m => 
-          m.id !== member.id && 
-          (m.roles.cache.has(ROLE_VERIFICATOR) || m.roles.cache.has(ROLE_LEADER_VERIFICATOR))
+        console.log('Started refreshing application (/) commands.');
+        await rest.put(
+            Routes.applicationGuildCommands(process.env.CLIENT_ID || 'YOUR_CLIENT_ID', process.env.GUILD_ID),
+            { body: commands.map(command => command.toJSON()) },
         );
-        if (modsAlready.size > 0) {
-          // Another verificator is already in channel; kick this member out
-          member.voice.setChannel(null).catch(err => 
-            console.log(`Disconnected extra verificator ${member.user.tag}:`, err)
-          );
+        console.log('Successfully reloaded application (/) commands.');
+    } catch (error) {
+        console.error(error);
+    }
+})();
+
+// When the bot is ready.
+client.once(Events.ClientReady, () => {
+    console.log(`Logged in as ${client.user.tag}`);
+});
+
+// ========================
+// GUILD MEMBER EVENTS
+// ========================
+
+// On member join: assign Unverified role and DM welcome message.
+client.on(Events.GuildMemberAdd, async member => {
+    try {
+        const unverifiedRole = member.guild.roles.cache.get(process.env.ROLE_UNVERIFIED);
+        if (unverifiedRole) await member.roles.add(unverifiedRole);
+        await member.send("# Merhba Bik Fi A7sen Server Fl Maghrib! Daba ayji 3ndk Verificator bash yverifik 😊");
+    } catch (err) {
+        console.error('Error on GuildMemberAdd:', err);
+    }
+});
+
+// ========================
+// VOICE STATE UPDATE EVENTS
+// ========================
+
+client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
+    // --------------------------
+    // Verification System
+    // --------------------------
+    if (newState.channel && newState.channel.name === "Join Verification") {
+        // When a user joins the permanent "Join Verification" VC,
+        // create a private temporary verification VC.
+        try {
+            const guild = newState.guild;
+            const member = newState.member;
+            // Create temp voice channel named "Verify - Username"
+            const tempVC = await guild.channels.create({
+                name: `Verify - ${member.user.username}`,
+                type: 2, // 2 is for voice channels
+                parent: newState.channel.parentId,
+                permissionOverwrites: [] // customize permissions if needed
+            });
+            // Move the member to the new VC.
+            await member.voice.setChannel(tempVC);
+            // Store session info.
+            verificationSessions.set(tempVC.id, { userId: member.id, assignedVerificator: null, rejected: false });
+            // Send a notification in the designated alert channel with a button.
+            const alertChannel = guild.channels.cache.get(process.env.CHANNEL_VERIFICATION_ALERT);
+            if (alertChannel) {
+                const joinButton = new ButtonBuilder()
+                    .setCustomId(`join_verification_${tempVC.id}`)
+                    .setLabel("Join Verification")
+                    .setStyle(ButtonStyle.Primary);
+                const row = new ActionRowBuilder().addComponents(joinButton);
+                const alertMsg = await alertChannel.send({
+                    content: `<@&${process.env.ROLE_VERIFICATOR}> Verification needed for <@${member.id}>.`,
+                    components: [row]
+                });
+                // Auto-delete the notification after 10 seconds.
+                setTimeout(() => {
+                    alertMsg.delete().catch(() => {});
+                }, 10000);
+            }
+        } catch (err) {
+            console.error('Error creating verification VC:', err);
         }
-      }
     }
-    // If member is a leader verificator, we allow them even if one normal is present.
-    // (No extra code needed; we simply don't disconnect leaders in that scenario.)
-  }
+
+    // --------------------------
+    // Public 1-Tap System
+    // --------------------------
+    // When a user joins the "Create Voice" channel (ID from env VOICE_ONETAP),
+    // create a private temporary VC named "🎧 Username".
+    if (newState.channel && newState.channel.id === process.env.VOICE_ONETAP) {
+        try {
+            const guild = newState.guild;
+            const member = newState.member;
+            const tempVC = await guild.channels.create({
+                name: `🎧 ${member.user.username}`,
+                type: 2,
+                parent: newState.channel.parentId,
+                permissionOverwrites: [] // customize permissions as needed
+            });
+            // Store the owner for this session.
+            onetapSessions.set(tempVC.id, member.id);
+            await member.voice.setChannel(tempVC);
+        } catch (err) {
+            console.error('Error creating 1-Tap VC:', err);
+        }
+    }
+
+    // --------------------------
+    // Auto-delete Empty Temp VCs
+    // --------------------------
+    // When a temp VC becomes empty, delete it and remove session data.
+    if (oldState.channel && oldState.channel.members.size === 0) {
+        const channelId = oldState.channel.id;
+        if (verificationSessions.has(channelId) || onetapSessions.has(channelId)) {
+            oldState.channel.delete().catch(() => {});
+            verificationSessions.delete(channelId);
+            onetapSessions.delete(channelId);
+        }
+    }
 });
 
-// Event: Verification commands (+VB, +VG)
-client.on('messageCreate', async (message) => {
-  if (message.author.bot || !message.guild) return;
-  const content = message.content.trim();
-  const lower = content.toLowerCase();
-  const isVB = lower.startsWith('+vb');
-  const isVG = lower.startsWith('+vg');
-  if (!isVB && !isVG) return;
+// ========================
+// INTERACTION EVENTS
+// ========================
 
-  const targetMember = message.mentions.members?.first();
-  if (!targetMember) {
-    return message.reply("# Khasek Tagi Chi User La Bghiti Tverifih: `+VB @username` أو `+VG @username`.").then(msg => {
-      setTimeout(() => msg.delete().catch(()=>{}), 5000);
-    });
-  }
-  const authorMember = message.member;
-  const isAuthorVerificator = authorMember.roles.cache.has(ROLE_VERIFICATOR) || authorMember.roles.cache.has(ROLE_LEADER_VERIFICATOR);
-  if (!isAuthorVerificator) {
-    return message.reply("# Ma3endksh L7a9 Tverifi Users.").then(msg => {
-      setTimeout(() => msg.delete().catch(()=>{}), 5000);
-    });
-  }
-  if (!targetMember.roles.cache.has(ROLE_UNVERIFIED)) {
-    return message.reply("That user is not unverified.").then(msg => {
-      setTimeout(() => msg.delete().catch(()=>{}), 5000);
-    });
-  }
-
-  const newRoleId = isVB ? ROLE_VERIFIED_BOY : ROLE_VERIFIED_GIRL;
-  const genderText = isVB ? 'boy' : 'girl';
-  try {
-    await targetMember.roles.remove(ROLE_UNVERIFIED);
-    await targetMember.roles.add(newRoleId);
-  } catch (err) {
-    console.error(`Error assigning roles to ${targetMember.user.tag}:`, err);
-    return message.reply("# M9dertsh N3ti Verified Role Lhad User  ❌️.").catch(()=>{});
-  }
-
-  // Move user to a populated voice channel if they are in the verification channel
-  if (targetMember.voice && targetMember.voice.channelId === VOICE_VERIFICATION) {
-    const voiceChannels = message.guild.channels.cache.filter(ch => 
-      ch.id !== VOICE_VERIFICATION && 
-      ch.type === 2 &&  // GuildVoice
-      ch.permissionsFor(targetMember).has(PermissionsBitField.Flags.Connect)
-    );
-    let bestChannel = null;
-    let maxCount = 0;
-    voiceChannels.forEach(ch => {
-      const count = ch.members.filter(m => !m.user.bot).size;
-      if (count > maxCount) {
-        maxCount = count;
-        bestChannel = ch;
-      }
-    });
-    if (bestChannel) {
-      targetMember.voice.setChannel(bestChannel.id).catch(err => {
-        console.error(`Failed to move ${targetMember.user.tag}:`, err);
-      });
+client.on(Events.InteractionCreate, async interaction => {
+    // --------------------------
+    // Button Interactions
+    // --------------------------
+    if (interaction.isButton()) {
+        // Handle the "Join Verification" button.
+        if (interaction.customId.startsWith("join_verification_")) {
+            const vcId = interaction.customId.split("_").pop();
+            const session = verificationSessions.get(vcId);
+            if (!session) {
+                return interaction.reply({ content: "This verification session has expired.", ephemeral: true });
+            }
+            // Ensure only one verificator can join unless the user has the leader override.
+            if (session.assignedVerificator && session.assignedVerificator !== interaction.user.id) {
+                const member = interaction.guild.members.cache.get(interaction.user.id);
+                if (!member.roles.cache.has(process.env.ROLE_LEADER_VERIFICATOR)) {
+                    return interaction.reply({ content: "This session has already been claimed.", ephemeral: true });
+                }
+            }
+            // Assign the verificator and move them to the verification VC.
+            session.assignedVerificator = interaction.user.id;
+            verificationSessions.set(vcId, session);
+            const verifMember = interaction.guild.members.cache.get(interaction.user.id);
+            if (verifMember.voice.channelId !== vcId) {
+                await verifMember.voice.setChannel(vcId);
+            }
+            return interaction.reply({ content: "You've joined the verification room.", ephemeral: true });
+        }
     }
-    // If no active channel found, do nothing (user stays or can join another on their own).
-  }
+    // --------------------------
+    // Slash Commands
+    // --------------------------
+    else if (interaction.isChatInputCommand()) {
+        const { commandName } = interaction;
+        // Helper: Get the voice channel the member is in.
+        const memberVC = interaction.member.voice.channel;
 
-  // Log verification
-  const verifierId = authorMember.id;
-  const verifiedId = targetMember.id;
-  verificationData.logs.push({ verifier: verifierId, verified: verifiedId, time: new Date().toISOString(), role: newRoleId });
-  verificationData.counts[verifierId] = (verificationData.counts[verifierId] || 0) + 1;
-  fs.writeFileSync(dataFile, JSON.stringify(verificationData, null, 2));
-
-  // Confirmation message
-  message.reply(`${targetMember.user.username} # Was Verified As: **${genderText}**! ✅`).catch(()=>{});
+        if (commandName === "kick") {
+            // Kick a user from your private (1‑Tap) voice channel.
+            if (!memberVC || !onetapSessions.has(memberVC.id)) {
+                return interaction.reply({ content: "You are not in your private voice channel.", ephemeral: true });
+            }
+            const target = interaction.options.getUser('target');
+            const targetMember = interaction.guild.members.cache.get(target.id);
+            if (targetMember && targetMember.voice.channelId === memberVC.id) {
+                await targetMember.voice.disconnect();
+                return interaction.reply({ content: `${targetMember.user.username} has been kicked from your channel.` });
+            } else {
+                return interaction.reply({ content: "User not found in your channel.", ephemeral: true });
+            }
+        } else if (commandName === "reject") {
+            // Mark the verification session as rejected.
+            if (!memberVC || !verificationSessions.has(memberVC.id)) {
+                return interaction.reply({ content: "You are not in a verification room.", ephemeral: true });
+            }
+            let session = verificationSessions.get(memberVC.id);
+            session.rejected = true;
+            verificationSessions.set(memberVC.id, session);
+            return interaction.reply({ content: "User has been rejected." });
+        } else if (commandName === "perm") {
+            // Allow a rejected user to join again.
+            if (!memberVC || !verificationSessions.has(memberVC.id)) {
+                return interaction.reply({ content: "You are not in a verification room.", ephemeral: true });
+            }
+            let session = verificationSessions.get(memberVC.id);
+            session.rejected = false;
+            verificationSessions.set(memberVC.id, session);
+            return interaction.reply({ content: "User is now permitted to join." });
+        } else if (commandName === "claim") {
+            // Claim ownership of your private 1‑Tap voice channel.
+            if (!memberVC || !onetapSessions.has(memberVC.id)) {
+                return interaction.reply({ content: "You are not in a private voice channel.", ephemeral: true });
+            }
+            onetapSessions.set(memberVC.id, interaction.user.id);
+            return interaction.reply({ content: "You have claimed ownership of this voice channel." });
+        } else if (commandName === "lock") {
+            // Lock your private voice channel by denying the Connect permission.
+            if (!memberVC || !onetapSessions.has(memberVC.id)) {
+                return interaction.reply({ content: "You are not in a private voice channel.", ephemeral: true });
+            }
+            await memberVC.permissionOverwrites.edit(interaction.guild.id, { Connect: false });
+            return interaction.reply({ content: "Voice channel locked." });
+        } else if (commandName === "unlock") {
+            // Unlock your private voice channel.
+            if (!memberVC || !onetapSessions.has(memberVC.id)) {
+                return interaction.reply({ content: "You are not in a private voice channel.", ephemeral: true });
+            }
+            await memberVC.permissionOverwrites.edit(interaction.guild.id, { Connect: true });
+            return interaction.reply({ content: "Voice channel unlocked." });
+        } else if (commandName === "limit") {
+            // Set a user limit for your private voice channel.
+            if (!memberVC || !onetapSessions.has(memberVC.id)) {
+                return interaction.reply({ content: "You are not in a private voice channel.", ephemeral: true });
+            }
+            const limit = interaction.options.getInteger('number');
+            await memberVC.setUserLimit(limit);
+            return interaction.reply({ content: `Voice channel user limit set to ${limit}.` });
+        } else if (commandName === "name") {
+            // Rename your private voice channel.
+            if (!memberVC || !onetapSessions.has(memberVC.id)) {
+                return interaction.reply({ content: "You are not in a private voice channel.", ephemeral: true });
+            }
+            const newName = interaction.options.getString('text');
+            await memberVC.setName(newName);
+            return interaction.reply({ content: `Voice channel renamed to ${newName}.` });
+        } else if (commandName === "status") {
+            // Update the status of your channel (this example simply echoes the status).
+            const status = interaction.options.getString('text');
+            // (You can store and display status as needed.)
+            return interaction.reply({ content: `Status updated to: ${status}` });
+        } else if (commandName === "unban") {
+            // Unban a user by ID.
+            const userId = interaction.options.getString('userid');
+            try {
+                await interaction.guild.members.unban(userId);
+                return interaction.reply({ content: `User ${userId} has been unbanned.` });
+            } catch (err) {
+                return interaction.reply({ content: "Failed to unban user.", ephemeral: true });
+            }
+        } else if (commandName === "binfo") {
+            // Show total number of bans.
+            try {
+                const bans = await interaction.guild.bans.fetch();
+                return interaction.reply({ content: `Total bans: ${bans.size}` });
+            } catch (err) {
+                return interaction.reply({ content: "Failed to fetch bans.", ephemeral: true });
+            }
+        } else if (commandName === "jinfo") {
+            // Show jail reason for a specific user.
+            const userId = interaction.options.getString('userid');
+            const reason = jailData.get(userId) || "No jail reason found.";
+            return interaction.reply({ content: `Jail info for ${userId}: ${reason}` });
+        } else if (commandName === "jailed") {
+            // Show the total number of jailed users.
+            return interaction.reply({ content: `Total jailed users: ${jailData.size}` });
+        } else if (commandName === "topvrf") {
+            // (Dummy implementation – replace with your own logic.)
+            return interaction.reply({ content: `Top verificators: [Data coming soon]` });
+        } else if (commandName === "toponline") {
+            // (Dummy implementation – replace with your own logic.)
+            return interaction.reply({ content: `Most online users: [Data coming soon]` });
+        } else if (commandName === "help") {
+            // Smart help command: show only the commands that the user is allowed to see based on their roles.
+            let helpMsg = "**Available Commands:**\n";
+            helpMsg += "/help - Show this help message\n";
+            // Show 1‑Tap commands to verificators.
+            if (interaction.member.roles.cache.has(process.env.ROLE_VERIFICATOR) || interaction.member.roles.cache.has(process.env.ROLE_LEADER_VERIFICATOR)) {
+                helpMsg += "/kick, /reject, /perm, /claim, /lock, /unlock, /limit, /name, /status\n";
+            }
+            // Show admin commands.
+            if (interaction.member.roles.cache.has(process.env.ADMIN_ROLE)) {
+                helpMsg += "/unban, /binfo, /topvrf, /toponline\n";
+            }
+            // Show jail commands.
+            helpMsg += "Message Commands: +jail <userID> <reason>, +unjail <userID>\n";
+            return interaction.reply({ content: helpMsg, ephemeral: true });
+        }
+    }
 });
 
-// Event: Slash command interaction (/topverificator)
-client.on('interactionCreate', async (interaction) => {
-  if (!interaction.isCommand()) return;
-  if (interaction.commandName === 'topverificator') {
-    const counts = verificationData.counts;
-    if (!counts || Object.keys(counts).length === 0) {
-      return interaction.reply({ content: "No verifications have been logged yet.", ephemeral: true });
+// ========================
+// MESSAGE COMMANDS (Prefix based)
+// ========================
+
+client.on(Events.MessageCreate, async message => {
+    if (message.author.bot) return;
+
+    // --------------------------
+    // Verification Commands in VC
+    // --------------------------
+    // In our design, a verificator in a temporary verification VC can type "+boy" or "+girl"
+    // to verify the user awaiting verification.
+    if (message.content.startsWith('+boy') || message.content.startsWith('+girl')) {
+        // Look for a verification session where the sender is the assigned verificator.
+        let sessionId;
+        for (const [vcId, session] of verificationSessions.entries()) {
+            if (session.assignedVerificator === message.author.id) {
+                sessionId = vcId;
+                break;
+            }
+        }
+        if (!sessionId) {
+            return message.reply("No active verification session found for you.");
+        }
+        const session = verificationSessions.get(sessionId);
+        const memberToVerify = message.guild.members.cache.get(session.userId);
+        if (!memberToVerify) return message.reply("User not found.");
+
+        try {
+            // Remove the Unverified role.
+            await memberToVerify.roles.remove(process.env.ROLE_UNVERIFIED);
+            // Add the appropriate verified role.
+            if (message.content.startsWith('+boy')) {
+                await memberToVerify.roles.add(process.env.ROLE_VERIFIED_BOY);
+            } else {
+                await memberToVerify.roles.add(process.env.ROLE_VERIFIED_GIRL);
+            }
+            // DM the verified user.
+            await memberToVerify.send("# Tverifiti w daba t9der tchouf server kaml  ✅.");
+            // Attempt to move the verified user to an active voice channel with people (if available).
+            const activeVC = message.guild.channels.cache.find(ch => ch.type === 2 && ch.id !== sessionId && ch.members.size > 1);
+            if (activeVC) {
+                await memberToVerify.voice.setChannel(activeVC);
+            }
+            // Delete the temporary verification voice channel.
+            const verifVC = message.guild.channels.cache.get(sessionId);
+            if (verifVC) await verifVC.delete().catch(() => {});
+            verificationSessions.delete(sessionId);
+            return message.reply("User verified successfully.");
+        } catch (err) {
+            console.error("Verification error:", err);
+            return message.reply("Verification failed.");
+        }
     }
-    // Sort by highest count
-    const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
-    let replyText = "**🏆 Top Verificators:**\n";
-    let rank = 1;
-    for (const [userId, count] of sorted) {
-      let name = `User ${userId}`;
-      const member = await interaction.guild.members.fetch(userId).catch(() => null);
-      if (member) name = member.user.tag;
-      replyText += `${rank}. **${name}** — ${count} verification${count !== 1 ? 's' : ''}\n`;
-      rank++;
+
+    // --------------------------
+    // Jail System Commands (Prefix based)
+    // --------------------------
+    // +jail <userID> <reason> : jail the user.
+    if (message.content.startsWith('+jail')) {
+        const args = message.content.split(' ');
+        if (args.length < 3) return message.reply("Usage: +jail <userID> <reason>");
+        const targetId = args[1];
+        const reason = args.slice(2).join(' ');
+        const targetMember = message.guild.members.cache.get(targetId);
+        if (!targetMember) return message.reply("User not found.");
+        try {
+            await targetMember.roles.add(process.env.ROLE_JAILED);
+            // Move user to the jail voice channel.
+            const jailVC = message.guild.channels.cache.get(process.env.VOICE_JAIL);
+            if (jailVC) await targetMember.voice.setChannel(jailVC);
+            // Save jail reason.
+            jailData.set(targetId, reason);
+            try { await targetMember.send(`You have been jailed for: ${reason}`); } catch (e) {}
+            return message.reply(`User ${targetMember.user.username} has been jailed.`);
+        } catch (err) {
+            console.error("Jail error:", err);
+            return message.reply("Failed to jail the user.");
+        }
     }
-    await interaction.reply({ content: replyText, ephemeral: false });
-  }
+    // +unjail <userID> : unjail the user.
+    if (message.content.startsWith('+unjail')) {
+        const args = message.content.split(' ');
+        if (args.length < 2) return message.reply("Usage: +unjail <userID>");
+        const targetId = args[1];
+        const targetMember = message.guild.members.cache.get(targetId);
+        if (!targetMember) return message.reply("User not found.");
+        try {
+            await targetMember.roles.remove(process.env.ROLE_JAILED);
+            jailData.delete(targetId);
+            return message.reply(`User ${targetMember.user.username} has been unjailed.`);
+        } catch (err) {
+            console.error("Unjail error:", err);
+            return message.reply("Failed to unjail the user.");
+        }
+    }
 });
 
-// Login the bot
-client.login(TOKEN);
+// ========================
+// LOGIN THE BOT
+// ========================
+
+client.login(process.env.DISCORD_TOKEN);

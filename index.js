@@ -1,7 +1,8 @@
 // index.js
 // MBC Super Bot using Discord.js v14 with enhanced verification notifications,
 // auto-role removal on jail, modified One-Tap VC naming & ownership/command restrictions,
-// and per-user reject/permit functionality in one-tap channels.
+// per-user reject/permit functionality in one-tap channels,
+// and new DM messages and plain text notifications.
 
 require('dotenv').config();
 const {
@@ -12,7 +13,7 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  EmbedBuilder,
+  EmbedBuilder, // no longer used for notification, but still here if needed elsewhere
   Events,
   REST,
   Routes,
@@ -104,7 +105,8 @@ client.on(Events.GuildMemberAdd, async member => {
   try {
     const unverifiedRole = member.guild.roles.cache.get(process.env.ROLE_UNVERIFIED);
     if (unverifiedRole) await member.roles.add(unverifiedRole);
-    await member.send("Merhba Bik Fi A7sen Server Fl Maghrib! Daba ayji 3ndk Verificator bash yverifik 😊");
+    // Send new DM message to user upon join with mention.
+    await member.send(`# Mar7ba Bik Fi  ☆ MBC ☆  Ahsen Sever Fl Maghrib 🇲🇦 Daba Ayje 3ndk Chi Verificator ✅️ Tania Wehda ❤️ ${member.toString()}`);
   } catch (err) {
     console.error('Error on GuildMemberAdd:', err);
   }
@@ -113,8 +115,6 @@ client.on(Events.GuildMemberAdd, async member => {
 // -----------------------
 // VOICE STATE UPDATE
 // -----------------------
-
-// When someone joins any voice channel, we check if it’s a one-tap VC and if they’re rejected.
 client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
   const guild = newState.guild || oldState.guild;
 
@@ -124,7 +124,7 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
       const member = newState.member;
       const tempVC = await guild.channels.create({
         name: `Verify - ${member.displayName}`,
-        type: 2,
+        type: 2, // Voice channel
         parent: newState.channel.parentId,
         permissionOverwrites: []
       });
@@ -132,19 +132,18 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
       await member.voice.setChannel(tempVC);
       verificationSessions.set(tempVC.id, { userId: member.id, assignedVerificator: null, rejected: false });
       
+      // Send a plain text notification with big bold text (not embed)
       const alertChannel = guild.channels.cache.get(process.env.CHANNEL_VERIFICATION_ALERT);
       if (alertChannel) {
-        console.log(`Sending verification alert in ${alertChannel.name}`);
+        console.log(`Sending verification notification in ${alertChannel.name}`);
         const joinButton = new ButtonBuilder()
           .setCustomId(`join_verification_${tempVC.id}`)
           .setLabel("🚀 Join Verification")
           .setStyle(ButtonStyle.Primary);
         const row = new ActionRowBuilder().addComponents(joinButton);
-        const embed = new EmbedBuilder()
-          .setTitle("**MEMBER JDID AJEW 🙋‍♂️**")
-          .setDescription("Click the button below to join the verification VC instantly!")
-          .setColor(0x00AE86);
-        const alertMsg = await alertChannel.send({ embeds: [embed], components: [row] });
+        // Plain text message (big bold simulated with markdown)
+        const textNotification = "**# MEMBER JDID AJEW 🙋‍♂️**";
+        const alertMsg = await alertChannel.send({ content: textNotification, components: [row] });
         setTimeout(() => { alertMsg.delete().catch(console.error); }, 6000);
       } else {
         console.error("Alert channel not found. Check CHANNEL_VERIFICATION_ALERT in .env");
@@ -167,7 +166,7 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
         ]
       });
       console.log(`Created one-tap VC: ${tempVC.name} for ${member.displayName}`);
-      // Initialize tap session with owner and an empty rejectedUsers array.
+      // Store tap session with owner and empty rejectedUsers list.
       onetapSessions.set(tempVC.id, { owner: member.id, rejectedUsers: [] });
       await member.voice.setChannel(tempVC);
     } catch (err) {
@@ -179,7 +178,6 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
   if (newState.channel && onetapSessions.has(newState.channel.id)) {
     const tapSession = onetapSessions.get(newState.channel.id);
     if (tapSession.rejectedUsers && tapSession.rejectedUsers.includes(newState.member.id)) {
-      // Disconnect the user if they are rejected.
       newState.member.voice.disconnect("You are rejected from this tap channel.");
       return;
     }
@@ -263,7 +261,7 @@ client.on(Events.InteractionCreate, async interaction => {
     const memberVC = interaction.member.voice.channel;
     if (!memberVC) return interaction.reply({ content: "You must be in a voice channel to use this command.", ephemeral: true });
     
-    // ----- Handle /reject and /perm only in one-tap channels -----
+    // ----- Handle /reject and /perm in one-tap channels (per-user) -----
     if (commandName === "reject") {
       if (!onetapSessions.has(memberVC.id)) {
         return interaction.reply({ content: "This command only works in one-tap channels.", ephemeral: true });
@@ -279,7 +277,6 @@ client.on(Events.InteractionCreate, async interaction => {
         tapSession.rejectedUsers.push(targetUser.id);
       }
       onetapSessions.set(memberVC.id, tapSession);
-      // Deny Connect for target user
       await memberVC.permissionOverwrites.edit(targetUser.id, { Connect: false });
       return interaction.reply({ content: `${targetUser.tag} has been rejected from this tap channel.`, ephemeral: true });
     }
@@ -301,6 +298,7 @@ client.on(Events.InteractionCreate, async interaction => {
         return interaction.reply({ content: `${targetUser.tag} is not currently rejected in this channel.`, ephemeral: true });
       }
     }
+    
     // ----- Other One-Tap Commands (owner-restricted) -----
     const oneTapCommands = ["kick", "lock", "unlock", "limit", "name", "status", "claim"];
     if (onetapSessions.has(memberVC.id) && oneTapCommands.includes(commandName)) {
@@ -313,6 +311,7 @@ client.on(Events.InteractionCreate, async interaction => {
         }
       }
     }
+    
     if (commandName === "kick") {
       if (!onetapSessions.has(memberVC.id)) {
         return interaction.reply({ content: "You are not in a private tap channel.", ephemeral: true });
@@ -460,7 +459,8 @@ client.on(Events.MessageCreate, async message => {
         await memberToVerify.roles.add(process.env.ROLE_VERIFIED_GIRL);
         verifiedRoleName = "Verified Girl";
       }
-      await memberToVerify.send("Welcome to our server! You were verified successfully. Enjoy your time and get to know new people.");
+      // Send new verification DM message
+      await memberToVerify.send("# No Toxic Guys Here ❌️☢️ 7na Hna Bash Nchilliw Wnstmt3o Bw9tna ...Mar7ba Bik Mara Akhra ⚘️♥️");
       message.channel.send(`<@${memberToVerify.id}> was verified as ${verifiedRoleName} successfully!`);
       const activeVC = message.guild.channels.cache.filter(ch => ch.type === 2 && ch.id !== sessionId && ch.members.size > 0).first();
       if (activeVC) {
@@ -499,7 +499,7 @@ client.on(Events.MessageCreate, async message => {
       const jailVC = message.guild.channels.cache.get(process.env.VOICE_JAIL);
       if (jailVC) await targetMember.voice.setChannel(jailVC);
       jailData.set(targetId, reason);
-      try { await targetMember.send(`You have been jailed for: ${reason}`); } catch (e) {}
+      try { await targetMember.send(`# No Toxic Guys Here ❌️☢️ 7na Hna Bash Nchilliw Wnstmt3o Bw9tna ...Mar7ba Bik Mara Akhra ⚘️♥️`); } catch (e) {}
       return message.reply(`User ${targetMember.displayName} has been jailed.`);
     } catch (err) {
       console.error("Jail error:", err);

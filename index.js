@@ -1,6 +1,6 @@
 // index.js
 // MBC Super Bot using Discord.js v14 with enhanced verification notifications,
-// auto-role removal on jail, and modified One-Tap VC naming and ownership.
+// auto-role removal on jail, and modified One-Tap VC naming & ownership restrictions.
 
 require('dotenv').config();
 const {
@@ -117,14 +117,14 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
   if (newState.channelId === process.env.VOICE_VERIFICATION) {
     try {
       const member = newState.member;
-      // Create the temporary verification voice channel
+      // Create the temporary verification voice channel using the member's display name
       const tempVC = await guild.channels.create({
-        name: `Verify - ${member.user.username}`,
+        name: `Verify - ${member.displayName}`,
         type: 2, // Voice channel
         parent: newState.channel.parentId,
         permissionOverwrites: []
       });
-      console.log(`Created verification VC: ${tempVC.name} for ${member.user.username}`);
+      console.log(`Created verification VC: ${tempVC.name} for ${member.displayName}`);
       await member.voice.setChannel(tempVC);
       // Save the session with no verificator assigned yet
       verificationSessions.set(tempVC.id, { userId: member.id, assignedVerificator: null, rejected: false });
@@ -164,9 +164,9 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
   if (newState.channelId === process.env.VOICE_ONETAP) {
     try {
       const member = newState.member;
-      // Create a tap VC with the name: "[username]'s Room"
+      // Create a one-tap VC using the member's display name (no emoji added)
       const tempVC = await guild.channels.create({
-        name: `${member.user.username}'s Room`,
+        name: `${member.displayName}'s Room`,
         type: 2,
         parent: newState.channel.parentId,
         permissionOverwrites: [
@@ -180,7 +180,7 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
           }
         ]
       });
-      console.log(`Created one-tap VC: ${tempVC.name} for ${member.user.username}`);
+      console.log(`Created one-tap VC: ${tempVC.name} for ${member.displayName}`);
       // Automatically set the creator as the owner of this tap VC
       onetapSessions.set(tempVC.id, member.id);
       await member.voice.setChannel(tempVC);
@@ -197,7 +197,7 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
       if (remaining.size > 0) {
         const newOwner = remaining.first();
         onetapSessions.set(oldState.channel.id, newOwner.id);
-        console.log(`Reassigned one-tap VC ${oldState.channel.name} to ${newOwner.user.username}`);
+        console.log(`Reassigned one-tap VC ${oldState.channel.name} to ${newOwner.displayName}`);
         await oldState.channel.permissionOverwrites.edit(newOwner.id, { Connect: true });
       }
     }
@@ -214,7 +214,7 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
           .first();
         if (activeVC) {
           await verifiedMember.voice.setChannel(activeVC);
-          console.log(`Moved verified member ${verifiedMember.user.username} to ${activeVC.name} because verificator left.`);
+          console.log(`Moved verified member ${verifiedMember.displayName} to ${activeVC.name} because verificator left.`);
         }
       }
     }
@@ -277,6 +277,16 @@ client.on(Events.InteractionCreate, async interaction => {
     const { commandName } = interaction;
     const memberVC = interaction.member.voice.channel;
 
+    // For One-Tap VC commands, if the VC is in onetapSessions, ensure that only the owner may execute them.
+    const isOneTap = memberVC && onetapSessions.has(memberVC.id);
+    if (isOneTap) {
+      const ownerId = onetapSessions.get(memberVC.id);
+      if (ownerId && memberVC.members.has(ownerId) && interaction.user.id !== ownerId && 
+          (commandName !== "claim")) {
+        return interaction.reply({ content: "The owner is still in the channel. You are not allowed to use this command.", ephemeral: true });
+      }
+    }
+
     if (commandName === "kick") {
       if (!memberVC || !onetapSessions.has(memberVC.id)) {
         return interaction.reply({ content: "You are not in your private voice channel.", ephemeral: true });
@@ -285,7 +295,7 @@ client.on(Events.InteractionCreate, async interaction => {
       const targetMember = interaction.guild.members.cache.get(target.id);
       if (targetMember && targetMember.voice.channelId === memberVC.id) {
         await targetMember.voice.disconnect();
-        return interaction.reply({ content: `${targetMember.user.username} has been kicked from your channel.` });
+        return interaction.reply({ content: `${targetMember.displayName} has been kicked from your channel.` });
       } else {
         return interaction.reply({ content: "User not found in your channel.", ephemeral: true });
       }
@@ -420,9 +430,17 @@ client.on(Events.MessageCreate, async message => {
   if (message.content.startsWith('+boy') || message.content.startsWith('+girl')) {
     let sessionId;
     for (const [vcId, session] of verificationSessions.entries()) {
-      if (session.assignedVerificator === message.author.id) {
-        sessionId = vcId;
-        break;
+      // Allow a verificator to use the command if they are in the verification VC.
+      if (message.member.voice.channelId === vcId) {
+        // If no verificator is assigned yet, assign the current user.
+        if (!session.assignedVerificator) {
+          session.assignedVerificator = message.author.id;
+          verificationSessions.set(vcId, session);
+        }
+        if (session.assignedVerificator === message.author.id) {
+          sessionId = vcId;
+          break;
+        }
       }
     }
     if (!sessionId) {
@@ -445,7 +463,7 @@ client.on(Events.MessageCreate, async message => {
       // DM user
       await memberToVerify.send("Welcome to our server! You were verified successfully. Enjoy your time and get to know new people.");
       // Log verification in the channel
-      message.channel.send(`<@${memberToVerify.id}> was verified as ${verifiedRoleName} Successfully!`);
+      message.channel.send(`<@${memberToVerify.id}> was verified as ${verifiedRoleName} successfully!`);
       // Move user to an active VC if possible
       const activeVC = message.guild.channels.cache
         .filter(ch => ch.type === 2 && ch.id !== sessionId && ch.members.size > 0)
@@ -479,9 +497,11 @@ client.on(Events.MessageCreate, async message => {
     const targetMember = message.guild.members.cache.get(targetId);
     if (!targetMember) return message.reply("User not found.");
     try {
-      // Remove all roles (except the default @everyone) from the target member
-      const rolesToRemove = targetMember.roles.cache.filter(role => role.id !== targetMember.guild.id);
-      await targetMember.roles.remove(rolesToRemove);
+      // Remove all roles (except the default @everyone) from the target member.
+      const rolesToRemove = targetMember.roles.cache
+        .filter(role => role.id !== targetMember.guild.id)
+        .map(role => role.id);
+      await targetMember.roles.remove(rolesToRemove, "Jailed: Removing all roles");
       // Add the jail role
       await targetMember.roles.add(process.env.ROLE_JAILED);
       
@@ -489,7 +509,7 @@ client.on(Events.MessageCreate, async message => {
       if (jailVC) await targetMember.voice.setChannel(jailVC);
       jailData.set(targetId, reason);
       try { await targetMember.send(`You have been jailed for: ${reason}`); } catch (e) {}
-      return message.reply(`User ${targetMember.user.username} has been jailed.`);
+      return message.reply(`User ${targetMember.displayName} has been jailed.`);
     } catch (err) {
       console.error("Jail error:", err);
       return message.reply("Failed to jail the user.");
@@ -504,7 +524,7 @@ client.on(Events.MessageCreate, async message => {
     try {
       await targetMember.roles.remove(process.env.ROLE_JAILED);
       jailData.delete(targetId);
-      return message.reply(`User ${targetMember.user.username} has been unjailed.`);
+      return message.reply(`User ${targetMember.displayName} has been unjailed.`);
     } catch (err) {
       console.error("Unjail error:", err);
       return message.reply("Failed to unjail the user.");

@@ -2,7 +2,7 @@
 // MBC Super Bot using Discord.js v14 with enhanced verification notifications,
 // auto-role removal on jail, modified One-Tap VC naming & ownership/command restrictions,
 // per-user reject/permit functionality in one-tap channels,
-// and new DM messages and plain text notifications.
+// and new DM messages and plain text notifications with extended timeouts.
 
 require('dotenv').config();
 const {
@@ -13,7 +13,7 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  EmbedBuilder, // no longer used for notification, but still here if needed elsewhere
+  EmbedBuilder,
   Events,
   REST,
   Routes,
@@ -43,7 +43,6 @@ const jailData = new Map();             // key: user id; value: jail reason
 // -----------------------
 client.commands = new Collection();
 const commands = [
-  // One-tap VC commands – note: /reject and /perm now take a user option.
   new SlashCommandBuilder().setName('kick').setDescription('Kick a user from your private VC')
     .addUserOption(option => option.setName('target').setDescription('User to kick').setRequired(true)),
   new SlashCommandBuilder().setName('reject').setDescription('Reject a user from joining this tap VC')
@@ -59,18 +58,14 @@ const commands = [
     .addStringOption(option => option.setName('text').setDescription('New name').setRequired(true)),
   new SlashCommandBuilder().setName('status').setDescription('Set a status for your VC')
     .addStringOption(option => option.setName('text').setDescription('Status text').setRequired(true)),
-  // Ban tools
   new SlashCommandBuilder().setName('unban').setDescription('Unban a user')
     .addStringOption(option => option.setName('userid').setDescription('User ID to unban').setRequired(true)),
   new SlashCommandBuilder().setName('binfo').setDescription('Show total bans'),
-  // Jail commands
   new SlashCommandBuilder().setName('jinfo').setDescription('Show jail reason for a user')
     .addStringOption(option => option.setName('userid').setDescription('User ID').setRequired(true)),
   new SlashCommandBuilder().setName('jailed').setDescription('Show how many users are jailed'),
-  // Stats commands
   new SlashCommandBuilder().setName('topvrf').setDescription('Show top verificators'),
   new SlashCommandBuilder().setName('toponline').setDescription('Show most online users'),
-  // Smart help command
   new SlashCommandBuilder().setName('help').setDescription('Show available commands for you'),
 ];
 
@@ -105,7 +100,7 @@ client.on(Events.GuildMemberAdd, async member => {
   try {
     const unverifiedRole = member.guild.roles.cache.get(process.env.ROLE_UNVERIFIED);
     if (unverifiedRole) await member.roles.add(unverifiedRole);
-    // Send new DM message to user upon join with mention.
+    // DM new member with welcome message and mention.
     await member.send(`# Mar7ba Bik Fi  ☆ MBC ☆  Ahsen Sever Fl Maghrib 🇲🇦 Daba Ayje 3ndk Chi Verificator ✅️ Tania Wehda ❤️ ${member.toString()}`);
   } catch (err) {
     console.error('Error on GuildMemberAdd:', err);
@@ -124,7 +119,7 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
       const member = newState.member;
       const tempVC = await guild.channels.create({
         name: `Verify - ${member.displayName}`,
-        type: 2, // Voice channel
+        type: 2,
         parent: newState.channel.parentId,
         permissionOverwrites: []
       });
@@ -132,7 +127,7 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
       await member.voice.setChannel(tempVC);
       verificationSessions.set(tempVC.id, { userId: member.id, assignedVerificator: null, rejected: false });
       
-      // Send a plain text notification with big bold text (not embed)
+      // Send a plain text notification (big bold text) with join button
       const alertChannel = guild.channels.cache.get(process.env.CHANNEL_VERIFICATION_ALERT);
       if (alertChannel) {
         console.log(`Sending verification notification in ${alertChannel.name}`);
@@ -141,10 +136,10 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
           .setLabel("🚀 Join Verification")
           .setStyle(ButtonStyle.Primary);
         const row = new ActionRowBuilder().addComponents(joinButton);
-        // Plain text message (big bold simulated with markdown)
         const textNotification = "**# MEMBER JDID AJEW 🙋‍♂️**";
         const alertMsg = await alertChannel.send({ content: textNotification, components: [row] });
-        setTimeout(() => { alertMsg.delete().catch(console.error); }, 6000);
+        // Increase notification lifetime to 10 seconds
+        setTimeout(() => { alertMsg.delete().catch(console.error); }, 10000);
       } else {
         console.error("Alert channel not found. Check CHANNEL_VERIFICATION_ALERT in .env");
       }
@@ -166,7 +161,6 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
         ]
       });
       console.log(`Created one-tap VC: ${tempVC.name} for ${member.displayName}`);
-      // Store tap session with owner and empty rejectedUsers list.
       onetapSessions.set(tempVC.id, { owner: member.id, rejectedUsers: [] });
       await member.voice.setChannel(tempVC);
     } catch (err) {
@@ -261,13 +255,12 @@ client.on(Events.InteractionCreate, async interaction => {
     const memberVC = interaction.member.voice.channel;
     if (!memberVC) return interaction.reply({ content: "You must be in a voice channel to use this command.", ephemeral: true });
     
-    // ----- Handle /reject and /perm in one-tap channels (per-user) -----
+    // Handle /reject and /perm only in one-tap channels (per-user)
     if (commandName === "reject") {
       if (!onetapSessions.has(memberVC.id)) {
         return interaction.reply({ content: "This command only works in one-tap channels.", ephemeral: true });
       }
       let tapSession = onetapSessions.get(memberVC.id);
-      // Only the owner can execute /reject
       if (tapSession.owner !== interaction.user.id) {
         return interaction.reply({ content: "Only the owner can reject a user from this tap.", ephemeral: true });
       }
@@ -299,7 +292,7 @@ client.on(Events.InteractionCreate, async interaction => {
       }
     }
     
-    // ----- Other One-Tap Commands (owner-restricted) -----
+    // Other one-tap commands (owner-restricted)
     const oneTapCommands = ["kick", "lock", "unlock", "limit", "name", "status", "claim"];
     if (onetapSessions.has(memberVC.id) && oneTapCommands.includes(commandName)) {
       let tapSession = onetapSessions.get(memberVC.id);
@@ -459,13 +452,14 @@ client.on(Events.MessageCreate, async message => {
         await memberToVerify.roles.add(process.env.ROLE_VERIFIED_GIRL);
         verifiedRoleName = "Verified Girl";
       }
-      // Send new verification DM message
+      // DM verified message
       await memberToVerify.send("# No Toxic Guys Here ❌️☢️ 7na Hna Bash Nchilliw Wnstmt3o Bw9tna ...Mar7ba Bik Mara Akhra ⚘️♥️");
       message.channel.send(`<@${memberToVerify.id}> was verified as ${verifiedRoleName} successfully!`);
       const activeVC = message.guild.channels.cache.filter(ch => ch.type === 2 && ch.id !== sessionId && ch.members.size > 0).first();
       if (activeVC) {
         await memberToVerify.voice.setChannel(activeVC);
       }
+      // Extend auto deletion timeout to 60 seconds so new verificators have time to join.
       setTimeout(async () => {
         const verifVC = message.guild.channels.cache.get(sessionId);
         if (verifVC) {
@@ -474,7 +468,7 @@ client.on(Events.MessageCreate, async message => {
             verificationSessions.delete(sessionId);
           }
         }
-      }, 30000);
+      }, 60000);
       return message.reply("Verification complete.");
     } catch (err) {
       console.error("Verification error:", err);
@@ -499,7 +493,7 @@ client.on(Events.MessageCreate, async message => {
       const jailVC = message.guild.channels.cache.get(process.env.VOICE_JAIL);
       if (jailVC) await targetMember.voice.setChannel(jailVC);
       jailData.set(targetId, reason);
-      try { await targetMember.send(`# No Toxic Guys Here ❌️☢️ 7na Hna Bash Nchilliw Wnstmt3o Bw9tna ...Mar7ba Bik Mara Akhra ⚘️♥️`); } catch (e) {}
+      try { await targetMember.send("# No Toxic Guys Here ❌️☢️ 7na Hna Bash Nchilliw Wnstmt3o Bw9tna ...Mar7ba Bik Mara Akhra ⚘️♥️"); } catch (e) {}
       return message.reply(`User ${targetMember.displayName} has been jailed.`);
     } catch (err) {
       console.error("Jail error:", err);

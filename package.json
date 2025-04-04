@@ -1,7 +1,7 @@
 {
   "name": "mbc-super-bot",
   "version": "1.0.0",
-  "description": "A multi-feature Discord bot",
+  "description": "A multi-feature Discord bot for renting",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
@@ -9,7 +9,7 @@
   "dependencies": {
     "discord.js": "^14.0.0",
     "dotenv": "^16.0.0",
-    "@napi-rs/canvas": "^0.1.68"
+    "@napi-rs/canvas": "^0.1.68",
     "mongodb": "^5.1.0"
   }
 }

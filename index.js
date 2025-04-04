@@ -1,11 +1,13 @@
 // index.js
 // MBC Super Bot using Discord.js v14 with multiple features:
-// • Verification system (temporary VC with 9s notification; only one verificator allowed)
-// • One-tap (private voice channel) with owner and per-user reject/permit (/reject kicks target)
-// • Jail system via message commands (+jail and +unjail restricted to admins)
-// • Profile viewer: type "p" (or "p @user") to see a generated profile card with a gradient background, avatar, stats, and XP bar.
-// • Slash commands are categorized: admins see admin-only tools; everyone else sees tap and verification commands.
-// • A stylish /help command lists only the commands you’re allowed to use.
+// • Verification system: When an unverified user joins the designated verification channel,
+//   a temporary VC is created with a plain-text notification (9 seconds) and only one verificator may claim it.
+//   Once verified via +boy/+girl, the user remains until the verificator leaves.
+// • One-tap system: Private voice channels where the creator is the owner; the owner may manage access via /reject (which kicks the target) and /perm.
+// • Jail system: +jail and +unjail commands (admin-only) remove all roles and add a jail role.
+// • Profile Viewer: When a user types "p" (or "p @user"), a beautiful profile card is generated using Canvas (with gradient background, avatar, stats, XP bar).
+// • Slash commands are categorized: Admin commands are restricted to administrators, while tap/verification commands are available to everyone.
+// • A stylish /help command displays only the commands the user is allowed to see.
 
 require('dotenv').config();
 const {
@@ -24,9 +26,9 @@ const {
   PermissionsBitField
 } = require('discord.js');
 
-const { createCanvas, loadImage } = require('canvas');
+// Use @napi-rs/canvas for prebuilt canvas support
+const { createCanvas, loadImage } = require('@napi-rs/canvas');
 
-// Create the client
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -39,7 +41,7 @@ const client = new Client({
   partials: [Partials.Channel],
 });
 
-// In-memory session data
+// In-memory session data:
 const verificationSessions = new Map(); // { vcId: { userId, assignedVerificator, rejected } }
 const onetapSessions = new Map();       // { vcId: { owner, rejectedUsers: [] } }
 const jailData = new Map();             // { userId: jailReason }
@@ -181,7 +183,7 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
       await member.voice.setChannel(tempVC);
       verificationSessions.set(tempVC.id, { userId: member.id, assignedVerificator: null, rejected: false });
       
-      // Send plain text notification with join button (lasting 9 seconds)
+      // Send plain text notification with join button (9 seconds duration)
       const alertChannel = guild.channels.cache.get(process.env.CHANNEL_VERIFICATION_ALERT);
       if (alertChannel) {
         console.log(`Sending verification notification in ${alertChannel.name}`);
@@ -249,7 +251,7 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
     if (oldState.member.id === session.assignedVerificator) {
       if (oldState.channel.members.has(session.userId)) {
         const verifiedMember = oldState.channel.members.get(session.userId);
-        // Only move the verified user if they're not already in a one-tap channel.
+        // Only move if the verified user is not already in a one-tap channel.
         if (!verifiedMember.voice.channel || !onetapSessions.has(verifiedMember.voice.channel.id)) {
           const activeVC = guild.channels.cache
             .filter(ch => ch.type === 2 && ch.id !== oldState.channel.id && ch.members.size > 0)
@@ -465,11 +467,10 @@ client.on(Events.InteractionCreate, async interaction => {
       return interaction.reply({ content: `Most online users: [Data coming soon]` });
     }
     else if (commandName === "help") {
-      // Create a fancy embed for help
       const helpEmbed = new EmbedBuilder()
         .setColor(0xFF69B4)
         .setTitle("Available Commands")
-        .setDescription("Below is a list of commands you can use. Use these to manage your tap, verify users, view profiles, and more!")
+        .setDescription("Use these commands to manage your tap, verify users, view profiles, and more!")
         .addFields(
           { name: "Profile Viewer", value: "`p` → Show your profile\n`p @user` → Show a user's profile", inline: false },
           { name: "Tap Commands", value: "`/kick`, `/reject`, `/perm`, `/claim`, `/lock`, `/unlock`, `/limit`, `/name`, `/status`, `/mute`, `/unmute`", inline: false }
@@ -494,7 +495,7 @@ client.on('messageCreate', async (message) => {
   if (content.toLowerCase().startsWith('p')) {
     // If a user is mentioned, use that user; otherwise, use the author.
     const targetUser = message.mentions.users.first() || message.author;
-    // Dummy user data; replace with real data if available.
+    // Dummy user data for demonstration (replace with actual data as needed)
     const userData = {
       level: 38,
       xp: 277,
@@ -507,14 +508,12 @@ client.on('messageCreate', async (message) => {
       const width = 700, height = 300;
       const canvas = createCanvas(width, height);
       const ctx = canvas.getContext('2d');
-
       // Draw a gradient background.
       const gradient = ctx.createLinearGradient(0, 0, width, height);
       gradient.addColorStop(0, '#2c3e50');
       gradient.addColorStop(1, '#bdc3c7');
       ctx.fillStyle = gradient;
       ctx.fillRect(0, 0, width, height);
-
       // Draw avatar in a circle.
       const avatarURL = targetUser.displayAvatarURL({ extension: 'png', size: 512 });
       const avatarImg = await loadImage(avatarURL);
@@ -522,24 +521,21 @@ client.on('messageCreate', async (message) => {
       const avatarX = 50, avatarY = 50;
       ctx.save();
       ctx.beginPath();
-      ctx.arc(avatarX + avatarSize/2, avatarY + avatarSize/2, avatarSize/2, 0, Math.PI*2);
+      ctx.arc(avatarX + avatarSize / 2, avatarY + avatarSize / 2, avatarSize / 2, 0, Math.PI * 2);
       ctx.closePath();
       ctx.clip();
       ctx.drawImage(avatarImg, avatarX, avatarY, avatarSize, avatarSize);
       ctx.restore();
-
       // Write username.
       ctx.font = '30px Sans';
       ctx.fillStyle = '#ffffff';
       ctx.fillText(targetUser.username, 200, 90);
-
       // Write stats.
       ctx.font = '20px Sans';
       ctx.fillText(`Level: ${userData.level}`, 200, 130);
       ctx.fillText(`XP: ${userData.xp} / ${userData.xpNeeded}`, 200, 160);
       ctx.fillText(`Rep: ${userData.rep}`, 200, 190);
       ctx.fillText(`Credits: ${userData.credits}`, 200, 220);
-
       // Draw XP progress bar.
       const barX = 200, barY = 240, barWidth = 400, barHeight = 20;
       ctx.fillStyle = '#444444';
@@ -547,7 +543,6 @@ client.on('messageCreate', async (message) => {
       const progress = userData.xp / userData.xpNeeded;
       ctx.fillStyle = '#00ff00';
       ctx.fillRect(barX, barY, barWidth * progress, barHeight);
-
       const cardBuffer = canvas.toBuffer();
       const attachment = { attachment: cardBuffer, name: 'profile.png' };
       message.channel.send({ files: [attachment] });
@@ -598,10 +593,7 @@ client.on('interactionCreate', async (interaction) => {
 // -----------------------
 // MESSAGE COMMAND HANDLER (for Verification and Jail Commands)
 // -----------------------
-
-// Verification commands (+boy / +girl) and jail commands (+jail / +unjail) 
-// are assumed to be part of your existing functionality. (They are in the above code.)
-
+// Verification commands (+boy / +girl) and jail commands (+jail / +unjail) remain as in your previous code.
 client.on('messageCreate', async (message) => {
   if (message.author.bot) return;
   

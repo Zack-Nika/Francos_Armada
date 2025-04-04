@@ -2,12 +2,13 @@
 // MBC Super Bot using Discord.js v14 with multiple features:
 // • Verification system: temporary VC with 9s notification in the verification channel.
 //   Only one verificator can claim a session, and verified users remain until the verificator leaves.
-// • One-tap system: private VC (tap) where the creator is the owner; the owner can use /reject (which kicks the user) and /perm.
-// • Jail system: message commands +jail and +unjail (admin-only) remove all roles and add the jail role.
-// • Profile Viewer: message command "R" shows a simple profile picture view with two buttons (Avatar & Banner).
-//   Message command "P" shows a detailed profile card (with XP, level, rep, credits, and an XP bar).
-// • Slash commands are categorized: admin commands are restricted, while tap/verification commands are available to everyone.
-// • A stylish /help command sends an embed listing available commands.
+// • One-tap system: private VC (tap) where the creator is the owner; the owner may manage access using /reject (which also kicks the user) and /perm.
+// • Jail system: +jail and +unjail commands (admin-only) remove all roles and add a jail role.
+// • Profile Viewer:
+//   - "R" command: shows a simple profile picture view with two buttons (Avatar & Banner).
+//   - "P" command: shows a detailed profile card with XP, level, rep, credits, and an XP progress bar.
+// • Slash commands are categorized: admin commands are restricted to admins, while tap/verification commands are available to everyone.
+// • A stylish /help command sends an embed listing the available commands.
 
 require('dotenv').config();
 const {
@@ -26,7 +27,7 @@ const {
   PermissionsBitField
 } = require('discord.js');
 
-// Use @napi-rs/canvas (prebuilt) for generating profile cards.
+// Use @napi-rs/canvas for prebuilt canvas support.
 const { createCanvas, loadImage } = require('@napi-rs/canvas');
 
 const client = new Client({
@@ -251,7 +252,7 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
     if (oldState.member.id === session.assignedVerificator) {
       if (oldState.channel.members.has(session.userId)) {
         const verifiedMember = oldState.channel.members.get(session.userId);
-        // Only move if the verified user is not already in a one-tap channel.
+        // Only move the verified user if they're not already in a one-tap channel.
         if (!verifiedMember.voice.channel || !onetapSessions.has(verifiedMember.voice.channel.id)) {
           const activeVC = guild.channels.cache
             .filter(ch => ch.type === 2 && ch.id !== oldState.channel.id && ch.members.size > 0)
@@ -314,7 +315,7 @@ client.on(Events.InteractionCreate, async interaction => {
     const memberVC = interaction.member.voice.channel;
     if (!memberVC) return interaction.reply({ content: "You must be in a voice channel to use this command.", ephemeral: true });
     
-    // Handle /reject and /perm in one-tap channels:
+    // Handle /reject and /perm for one-tap channels:
     if (commandName === "reject") {
       if (!onetapSessions.has(memberVC.id)) {
         return interaction.reply({ content: "This command only works in one-tap channels.", ephemeral: true });
@@ -472,7 +473,7 @@ client.on(Events.InteractionCreate, async interaction => {
         .setTitle("Available Commands")
         .setDescription("Use these commands to manage your tap, verify users, view profiles, and more!")
         .addFields(
-          { name: "Profile Viewer", value: "`p` → Show detailed profile (XP, level, stats)\n`r` → Show your profile picture with buttons (Avatar/Banner)", inline: false },
+          { name: "Profile Viewer", value: "`p` → Show detailed profile (XP, level, stats)\n`r` → Show profile picture view with Avatar/Banner buttons", inline: false },
           { name: "Tap Commands", value: "`/kick`, `/reject`, `/perm`, `/claim`, `/lock`, `/unlock`, `/limit`, `/name`, `/status`, `/mute`, `/unmute`", inline: false }
         );
       if (interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
@@ -491,7 +492,6 @@ client.on(Events.InteractionCreate, async interaction => {
 client.on('messageCreate', async (message) => {
   if (message.author.bot) return;
   const content = message.content.trim();
-  
   // ----- R COMMAND: Show profile picture view with buttons -----
   if (content.toLowerCase().startsWith('r')) {
     let targetUser = message.mentions.users.first() || message.author;
@@ -526,7 +526,7 @@ client.on('messageCreate', async (message) => {
       console.error("Error fetching user data:", err);
       return message.reply("Error fetching user data.");
     }
-    // Dummy user data for profile stats (replace with real data if available)
+    // Dummy user data for profile stats (replace with actual data if available)
     const userData = {
       level: 38,
       xp: 277,
@@ -545,7 +545,11 @@ client.on('messageCreate', async (message) => {
       ctx.fillStyle = gradient;
       ctx.fillRect(0, 0, width, height);
       // Draw the user's avatar in a circle.
-      const avatarURL = targetUser.displayAvatarURL({ extension: 'png', size: 512 });
+      let avatarURL = targetUser.displayAvatarURL({ extension: 'png', size: 512 });
+      if (!avatarURL) {
+        // Fallback to default avatar (based on discriminator)
+        avatarURL = `https://cdn.discordapp.com/embed/avatars/${parseInt(targetUser.discriminator) % 5}.png`;
+      }
       const avatarImg = await loadImage(avatarURL);
       const avatarSize = 128;
       const avatarX = 50, avatarY = 50;
@@ -584,11 +588,10 @@ client.on('messageCreate', async (message) => {
 });
 
 // -----------------------
-// BUTTON INTERACTION HANDLER (for Profile Viewer Buttons)
+// BUTTON INTERACTION HANDLER (Profile Viewer Buttons)
 // -----------------------
 client.on('interactionCreate', async (interaction) => {
   if (!interaction.isButton()) return;
-  // Expected customId: "avatar_userId" or "banner_userId"
   const [action, userId] = interaction.customId.split('_');
   if (!userId) return;
   let targetUser;
@@ -621,13 +624,10 @@ client.on('interactionCreate', async (interaction) => {
 });
 
 // -----------------------
-// Additional Message Commands (Verification & Jail)
+// MESSAGE COMMAND HANDLER (Verification & Jail Commands)
 // -----------------------
-// Verification Commands (+boy / +girl) and Jail Commands (+jail / +unjail) are included as per your previous code.
-
 client.on('messageCreate', async (message) => {
   if (message.author.bot) return;
-  
   // ----- Verification Commands (+boy / +girl) -----
   if (message.content.startsWith('+boy') || message.content.startsWith('+girl')) {
     let sessionId;

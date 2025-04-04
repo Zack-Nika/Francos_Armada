@@ -7,7 +7,7 @@
 // • Profile Viewer:
 //   - "R" command: shows a simple profile picture view with two buttons (Avatar & Banner).
 //   - "P" command: shows a detailed profile card with XP, level, rep, credits, and an XP progress bar.
-//     (For "P", if you mention a user, it shows that user's profile; otherwise, it shows your own.)
+//     (If you mention a user, it shows that user's profile; otherwise, it shows your own.)
 // • Slash commands are categorized: admin commands are restricted to admins, while tap/verification commands are available to everyone.
 // • A stylish /help command sends an embed listing available commands.
 
@@ -316,7 +316,7 @@ client.on(Events.InteractionCreate, async interaction => {
     const memberVC = interaction.member.voice.channel;
     if (!memberVC) return interaction.reply({ content: "You must be in a voice channel to use this command.", ephemeral: true });
     
-    // Handle /reject and /perm for one-tap channels:
+    // Handle /reject and /perm in one-tap channels:
     if (commandName === "reject") {
       if (!onetapSessions.has(memberVC.id)) {
         return interaction.reply({ content: "This command only works in one-tap channels.", ephemeral: true });
@@ -493,7 +493,6 @@ client.on(Events.InteractionCreate, async interaction => {
 client.on('messageCreate', async (message) => {
   if (message.author.bot) return;
   const content = message.content.trim();
-  
   // ----- R COMMAND: Show profile picture view with buttons -----
   if (content.toLowerCase().startsWith('r')) {
     let targetUser = message.mentions.users.first() || message.author;
@@ -547,9 +546,11 @@ client.on('messageCreate', async (message) => {
       ctx.fillStyle = gradient;
       ctx.fillRect(0, 0, width, height);
       // Get the user's avatar URL with a fallback.
-      let avatarURL = targetUser.displayAvatarURL({ extension: 'png', size: 512 });
-      if (!avatarURL || avatarURL === "") {
-        avatarURL = `https://cdn.discordapp.com/embed/avatars/${parseInt(targetUser.discriminator) % 5}.png`;
+      let avatarURL;
+      if (targetUser.avatar) {
+        avatarURL = targetUser.displayAvatarURL({ extension: 'png', size: 512 });
+      } else {
+        avatarURL = `https://cdn.discordapp.com/embed/avatars/${parseInt(targetUser.discriminator, 10) % 5}.png`;
       }
       const avatarImg = await loadImage(avatarURL);
       const avatarSize = 128;

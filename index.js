@@ -282,7 +282,7 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
 // -----------------------
 // INTERACTION HANDLER
 // -----------------------
-client.on(Events.InteractionCreate, async interaction => {
+client.on('interactionCreate', async (interaction) => {
   // ----- Button Interaction for Verification Join -----
   if (interaction.isButton() && interaction.customId.startsWith("join_verification_")) {
     const vcId = interaction.customId.split("_").pop();
@@ -545,19 +545,14 @@ client.on('messageCreate', async (message) => {
       gradient.addColorStop(1, '#bdc3c7');
       ctx.fillStyle = gradient;
       ctx.fillRect(0, 0, width, height);
-      // Get the user's avatar URL with a fallback.
-      let avatarURL;
-      if (targetUser.avatar) {
-        avatarURL = targetUser.displayAvatarURL({ extension: 'png', size: 512 });
-      } else {
-        avatarURL = `https://cdn.discordapp.com/embed/avatars/${parseInt(targetUser.discriminator, 10) % 5}.png`;
-      }
+      // Get the user's avatar URL using defaultAvatarURL as fallback.
+      let avatarURL = targetUser.avatar ? targetUser.displayAvatarURL({ extension: 'png', size: 512 }) : targetUser.defaultAvatarURL;
       const avatarImg = await loadImage(avatarURL);
       const avatarSize = 128;
       const avatarX = 50, avatarY = 50;
       ctx.save();
       ctx.beginPath();
-      ctx.arc(avatarX + avatarSize/2, avatarY + avatarSize/2, avatarSize/2, 0, Math.PI*2);
+      ctx.arc(avatarX + avatarSize / 2, avatarY + avatarSize / 2, avatarSize / 2, 0, Math.PI * 2);
       ctx.closePath();
       ctx.clip();
       ctx.drawImage(avatarImg, avatarX, avatarY, avatarSize, avatarSize);

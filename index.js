@@ -1,13 +1,13 @@
 // index.js
 // MBC Super Bot using Discord.js v14 with multiple features:
-// • Verification system: When an unverified user joins the designated verification channel,
-//   a temporary VC is created with a plain-text notification (9 seconds) and only one verificator may claim it.
-//   Once verified via +boy/+girl, the user remains until the verificator leaves.
-// • One-tap system: Private voice channels where the creator is the owner; the owner may manage access via /reject (which kicks the target) and /perm.
-// • Jail system: +jail and +unjail commands (admin-only) remove all roles and add a jail role.
-// • Profile Viewer: When a user types "p" (or "p @user"), a beautiful profile card is generated using Canvas (with gradient background, avatar, stats, XP bar).
-// • Slash commands are categorized: Admin commands are restricted to administrators, while tap/verification commands are available to everyone.
-// • A stylish /help command displays only the commands the user is allowed to see.
+// • Verification system: temporary VC with 9s notification in the verification channel.
+//   Only one verificator can claim a session, and verified users remain until the verificator leaves.
+// • One-tap system: private VC (tap) where the creator is the owner; the owner can use /reject (which kicks the user) and /perm.
+// • Jail system: message commands +jail and +unjail (admin-only) remove all roles and add the jail role.
+// • Profile Viewer: message command "R" shows a simple profile picture view with two buttons (Avatar & Banner).
+//   Message command "P" shows a detailed profile card (with XP, level, rep, credits, and an XP bar).
+// • Slash commands are categorized: admin commands are restricted, while tap/verification commands are available to everyone.
+// • A stylish /help command sends an embed listing available commands.
 
 require('dotenv').config();
 const {
@@ -26,7 +26,7 @@ const {
   PermissionsBitField
 } = require('discord.js');
 
-// Use @napi-rs/canvas for prebuilt canvas support
+// Use @napi-rs/canvas (prebuilt) for generating profile cards.
 const { createCanvas, loadImage } = require('@napi-rs/canvas');
 
 const client = new Client({
@@ -88,7 +88,7 @@ const slashCommands = [
     .setDescription('Unmute a user in your voice channel')
     .addUserOption(option => option.setName('target').setDescription('User to unmute').setRequired(true)),
 
-  // ADMIN commands (visible only to admins)
+  // ADMIN commands (visible only to administrators)
   new SlashCommandBuilder()
     .setName('unban')
     .setDescription('Unban a user')
@@ -116,12 +116,12 @@ const slashCommands = [
     .setDescription('Show most online users')
     .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
 
-  // HELP command
+  // HELP command (visible to everyone)
   new SlashCommandBuilder().setName('help').setDescription('Show available commands'),
 ];
 
-const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
 (async () => {
+  const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
   try {
     console.log('Refreshing slash commands.');
     await rest.put(
@@ -183,7 +183,7 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
       await member.voice.setChannel(tempVC);
       verificationSessions.set(tempVC.id, { userId: member.id, assignedVerificator: null, rejected: false });
       
-      // Send plain text notification with join button (9 seconds duration)
+      // Send plain text notification with join button (lasting 9 seconds)
       const alertChannel = guild.channels.cache.get(process.env.CHANNEL_VERIFICATION_ALERT);
       if (alertChannel) {
         console.log(`Sending verification notification in ${alertChannel.name}`);
@@ -472,7 +472,7 @@ client.on(Events.InteractionCreate, async interaction => {
         .setTitle("Available Commands")
         .setDescription("Use these commands to manage your tap, verify users, view profiles, and more!")
         .addFields(
-          { name: "Profile Viewer", value: "`p` → Show your profile\n`p @user` → Show a user's profile", inline: false },
+          { name: "Profile Viewer", value: "`p` → Show detailed profile (XP, level, stats)\n`r` → Show your profile picture with buttons (Avatar/Banner)", inline: false },
           { name: "Tap Commands", value: "`/kick`, `/reject`, `/perm`, `/claim`, `/lock`, `/unlock`, `/limit`, `/name`, `/status`, `/mute`, `/unmute`", inline: false }
         );
       if (interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
@@ -486,16 +486,47 @@ client.on(Events.InteractionCreate, async interaction => {
 });
 
 // -----------------------
-// MESSAGE COMMAND HANDLER (Profile Viewer "p")
+// MESSAGE COMMAND HANDLER (Profile Viewer "p" and "r")
 // -----------------------
 client.on('messageCreate', async (message) => {
   if (message.author.bot) return;
   const content = message.content.trim();
-  // "p" command: if message starts with "p" (case-insensitive)
-  if (content.toLowerCase().startsWith('p')) {
-    // If a user is mentioned, use that user; otherwise, use the author.
-    const targetUser = message.mentions.users.first() || message.author;
-    // Dummy user data for demonstration (replace with actual data as needed)
+  
+  // ----- R COMMAND: Show profile picture view with buttons -----
+  if (content.toLowerCase().startsWith('r')) {
+    let targetUser = message.mentions.users.first() || message.author;
+    try {
+      targetUser = await targetUser.fetch();
+    } catch (err) {
+      console.error("Error fetching user data:", err);
+      return message.reply("Error fetching user data.");
+    }
+    const embed = new EmbedBuilder()
+      .setColor(0x0099ff)
+      .setTitle(`${targetUser.username}'s Profile Picture`)
+      .setDescription("Click a button below to view Avatar or Banner.")
+      .setThumbnail(targetUser.displayAvatarURL({ dynamic: true, size: 1024 }));
+    const avatarButton = new ButtonBuilder()
+      .setCustomId(`avatar_${targetUser.id}`)
+      .setLabel("Avatar")
+      .setStyle(ButtonStyle.Primary);
+    const bannerButton = new ButtonBuilder()
+      .setCustomId(`banner_${targetUser.id}`)
+      .setLabel("Banner")
+      .setStyle(ButtonStyle.Secondary);
+    const row = new ActionRowBuilder().addComponents(avatarButton, bannerButton);
+    await message.channel.send({ embeds: [embed], components: [row] });
+  }
+  // ----- P COMMAND: Show detailed profile card with stats -----
+  else if (content.toLowerCase().startsWith('p')) {
+    let targetUser = message.mentions.users.first() || message.author;
+    try {
+      targetUser = await targetUser.fetch();
+    } catch (err) {
+      console.error("Error fetching user data:", err);
+      return message.reply("Error fetching user data.");
+    }
+    // Dummy user data for profile stats (replace with real data if available)
     const userData = {
       level: 38,
       xp: 277,
@@ -504,7 +535,6 @@ client.on('messageCreate', async (message) => {
       credits: 1.01,
     };
     try {
-      // Generate profile card using Canvas.
       const width = 700, height = 300;
       const canvas = createCanvas(width, height);
       const ctx = canvas.getContext('2d');
@@ -514,19 +544,19 @@ client.on('messageCreate', async (message) => {
       gradient.addColorStop(1, '#bdc3c7');
       ctx.fillStyle = gradient;
       ctx.fillRect(0, 0, width, height);
-      // Draw avatar in a circle.
+      // Draw the user's avatar in a circle.
       const avatarURL = targetUser.displayAvatarURL({ extension: 'png', size: 512 });
       const avatarImg = await loadImage(avatarURL);
       const avatarSize = 128;
       const avatarX = 50, avatarY = 50;
       ctx.save();
       ctx.beginPath();
-      ctx.arc(avatarX + avatarSize / 2, avatarY + avatarSize / 2, avatarSize / 2, 0, Math.PI * 2);
+      ctx.arc(avatarX + avatarSize/2, avatarY + avatarSize/2, avatarSize/2, 0, Math.PI*2);
       ctx.closePath();
       ctx.clip();
       ctx.drawImage(avatarImg, avatarX, avatarY, avatarSize, avatarSize);
       ctx.restore();
-      // Write username.
+      // Write the username.
       ctx.font = '30px Sans';
       ctx.fillStyle = '#ffffff';
       ctx.fillText(targetUser.username, 200, 90);
@@ -536,7 +566,7 @@ client.on('messageCreate', async (message) => {
       ctx.fillText(`XP: ${userData.xp} / ${userData.xpNeeded}`, 200, 160);
       ctx.fillText(`Rep: ${userData.rep}`, 200, 190);
       ctx.fillText(`Credits: ${userData.credits}`, 200, 220);
-      // Draw XP progress bar.
+      // Draw an XP progress bar.
       const barX = 200, barY = 240, barWidth = 400, barHeight = 20;
       ctx.fillStyle = '#444444';
       ctx.fillRect(barX, barY, barWidth, barHeight);
@@ -558,7 +588,7 @@ client.on('messageCreate', async (message) => {
 // -----------------------
 client.on('interactionCreate', async (interaction) => {
   if (!interaction.isButton()) return;
-  // Expected customId format: "avatar_userId" or "banner_userId"
+  // Expected customId: "avatar_userId" or "banner_userId"
   const [action, userId] = interaction.customId.split('_');
   if (!userId) return;
   let targetUser;
@@ -591,9 +621,10 @@ client.on('interactionCreate', async (interaction) => {
 });
 
 // -----------------------
-// MESSAGE COMMAND HANDLER (for Verification and Jail Commands)
+// Additional Message Commands (Verification & Jail)
 // -----------------------
-// Verification commands (+boy / +girl) and jail commands (+jail / +unjail) remain as in your previous code.
+// Verification Commands (+boy / +girl) and Jail Commands (+jail / +unjail) are included as per your previous code.
+
 client.on('messageCreate', async (message) => {
   if (message.author.bot) return;
   

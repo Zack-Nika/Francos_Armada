@@ -1,15 +1,11 @@
 // index.js
-// MBC Super Bot using Discord.js v14
-// Features:
-//  • Enhanced verification notifications (9-second notification duration)
-//  • Auto-role removal on jail
-//  • Modified one-tap VC naming & ownership/command restrictions
-//  • Per-user reject/permit functionality in one-tap channels (with /reject kicking the target)
-//  • Welcome and verified DM messages
-//  • Verified users remain in the verification VC until the verificator leaves
-//  • Categorized slash commands: admins see admin tools; regular users see tap/verification commands
-//  • A message command "R" to view your own profile and "A @user" to view someone else's profile
-//  • A profile viewer with two buttons for Avatar and Banner
+// MBC Super Bot using Discord.js v14 with multiple features:
+// • Verification system (temporary VC with 9s notification; only one verificator allowed)
+// • One-tap (private voice channel) with owner and per-user reject/permit (/reject kicks target)
+// • Jail system via message commands (+jail and +unjail restricted to admins)
+// • Profile viewer: type "p" (or "p @user") to see a generated profile card with a gradient background, avatar, stats, and XP bar.
+// • Slash commands are categorized: admins see admin-only tools; everyone else sees tap and verification commands.
+// • A stylish /help command lists only the commands you’re allowed to use.
 
 require('dotenv').config();
 const {
@@ -28,6 +24,9 @@ const {
   PermissionsBitField
 } = require('discord.js');
 
+const { createCanvas, loadImage } = require('canvas');
+
+// Create the client
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -41,16 +40,16 @@ const client = new Client({
 });
 
 // In-memory session data
-const verificationSessions = new Map(); // { VC id: { userId, assignedVerificator, rejected } }
-const onetapSessions = new Map();       // { VC id: { owner, rejectedUsers: [] } }
-const jailData = new Map();             // { user id: jail reason }
+const verificationSessions = new Map(); // { vcId: { userId, assignedVerificator, rejected } }
+const onetapSessions = new Map();       // { vcId: { owner, rejectedUsers: [] } }
+const jailData = new Map();             // { userId: jailReason }
 
 // -----------------------
 // SLASH COMMANDS SETUP
 // -----------------------
 client.commands = new Collection();
 const slashCommands = [
-  // TAP commands (visible to all)
+  // TAP commands (visible to everyone)
   new SlashCommandBuilder()
     .setName('kick')
     .setDescription('Kick a user from your tap')
@@ -63,15 +62,9 @@ const slashCommands = [
     .setName('perm')
     .setDescription('Permit a rejected user to join this tap')
     .addUserOption(option => option.setName('target').setDescription('User to permit').setRequired(true)),
-  new SlashCommandBuilder()
-    .setName('claim')
-    .setDescription('Claim ownership of your tap'),
-  new SlashCommandBuilder()
-    .setName('lock')
-    .setDescription('Lock your tap'),
-  new SlashCommandBuilder()
-    .setName('unlock')
-    .setDescription('Unlock your tap'),
+  new SlashCommandBuilder().setName('claim').setDescription('Claim ownership of your tap'),
+  new SlashCommandBuilder().setName('lock').setDescription('Lock your tap'),
+  new SlashCommandBuilder().setName('unlock').setDescription('Unlock your tap'),
   new SlashCommandBuilder()
     .setName('limit')
     .setDescription('Set a user limit for your tap')
@@ -93,7 +86,7 @@ const slashCommands = [
     .setDescription('Unmute a user in your voice channel')
     .addUserOption(option => option.setName('target').setDescription('User to unmute').setRequired(true)),
 
-  // ADMIN commands (visible only to administrators)
+  // ADMIN commands (visible only to admins)
   new SlashCommandBuilder()
     .setName('unban')
     .setDescription('Unban a user')
@@ -121,10 +114,8 @@ const slashCommands = [
     .setDescription('Show most online users')
     .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
 
-  // HELP command (visible to everyone) with a fancy embed
-  new SlashCommandBuilder()
-    .setName('help')
-    .setDescription('Show available commands'),
+  // HELP command
+  new SlashCommandBuilder().setName('help').setDescription('Show available commands'),
 ];
 
 const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
@@ -190,7 +181,7 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
       await member.voice.setChannel(tempVC);
       verificationSessions.set(tempVC.id, { userId: member.id, assignedVerificator: null, rejected: false });
       
-      // Send plain text notification with join button (lasting 9 seconds).
+      // Send plain text notification with join button (lasting 9 seconds)
       const alertChannel = guild.channels.cache.get(process.env.CHANNEL_VERIFICATION_ALERT);
       if (alertChannel) {
         console.log(`Sending verification notification in ${alertChannel.name}`);
@@ -321,7 +312,7 @@ client.on(Events.InteractionCreate, async interaction => {
     const memberVC = interaction.member.voice.channel;
     if (!memberVC) return interaction.reply({ content: "You must be in a voice channel to use this command.", ephemeral: true });
     
-    // Handle /reject and /perm for one-tap channels:
+    // Handle /reject and /perm in one-tap channels:
     if (commandName === "reject") {
       if (!onetapSessions.has(memberVC.id)) {
         return interaction.reply({ content: "This command only works in one-tap channels.", ephemeral: true });
@@ -361,7 +352,7 @@ client.on(Events.InteractionCreate, async interaction => {
         return interaction.reply({ content: `${targetUser.tag} is not currently rejected in this tap.`, ephemeral: true });
       }
     }
-    // Mute / Unmute Commands:
+    // Mute and Unmute Commands:
     else if (commandName === "mute") {
       const target = interaction.options.getUser('target');
       const targetMember = interaction.guild.members.cache.get(target.id);
@@ -474,14 +465,14 @@ client.on(Events.InteractionCreate, async interaction => {
       return interaction.reply({ content: `Most online users: [Data coming soon]` });
     }
     else if (commandName === "help") {
-      // Create a classy embed for help with color and fields
+      // Create a fancy embed for help
       const helpEmbed = new EmbedBuilder()
-        .setColor(0xFF69B4) // a fancy pink color
+        .setColor(0xFF69B4)
         .setTitle("Available Commands")
-        .setDescription("Below is a list of commands you can use. Use these to manage your tap, verify users, and view profiles!")
+        .setDescription("Below is a list of commands you can use. Use these to manage your tap, verify users, view profiles, and more!")
         .addFields(
-          { name: "Profile Viewer", value: "`R` → Show your profile\n`A @user` → Show a user's profile", inline: false },
-          { name: "Tap Commands", value: "`/kick`, `/reject`, `/perm`, `/claim`, `/lock`, `/unlock`, `/limit`, `/name`, `/status`, `/mute`, `/unmute`", inline: false },
+          { name: "Profile Viewer", value: "`p` → Show your profile\n`p @user` → Show a user's profile", inline: false },
+          { name: "Tap Commands", value: "`/kick`, `/reject`, `/perm`, `/claim`, `/lock`, `/unlock`, `/limit`, `/name`, `/status`, `/mute`, `/unmute`", inline: false }
         );
       if (interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
         helpEmbed.addFields(
@@ -494,93 +485,87 @@ client.on(Events.InteractionCreate, async interaction => {
 });
 
 // -----------------------
-// MESSAGE COMMAND HANDLER (Profile Viewer)
+// MESSAGE COMMAND HANDLER (Profile Viewer "p")
 // -----------------------
 client.on('messageCreate', async (message) => {
   if (message.author.bot) return;
-  
   const content = message.content.trim();
-  
-  // "R" command: show your own profile
-  if (content.toUpperCase() === 'R') {
+  // "p" command: if message starts with "p" (case-insensitive)
+  if (content.toLowerCase().startsWith('p')) {
+    // If a user is mentioned, use that user; otherwise, use the author.
+    const targetUser = message.mentions.users.first() || message.author;
+    // Dummy user data; replace with real data if available.
+    const userData = {
+      level: 38,
+      xp: 277,
+      xpNeeded: 5348,
+      rep: 0,
+      credits: 1.01,
+    };
     try {
-      const fullUser = await message.author.fetch();
-      const avatarURL = fullUser.displayAvatarURL({ dynamic: true, size: 1024 });
-      const bannerURL = fullUser.bannerURL({ dynamic: true, size: 1024 });
-      const embed = new EmbedBuilder()
-        .setColor(0x0099ff)
-        .setTitle(`${fullUser.username}'s Profile`)
-        .setDescription("Click a button below to view Avatar or Banner.")
-        .setThumbnail(avatarURL)
-        .addFields(
-          { name: "Avatar", value: `[View Avatar](${avatarURL})`, inline: true },
-          { name: "Banner", value: bannerURL ? `[View Banner](${bannerURL})` : "No banner set", inline: true }
-        )
-        .setFooter({ text: `Requested by: ${message.author.username}` });
-      
-      const avatarButton = new ButtonBuilder()
-        .setCustomId(`avatar_${message.author.id}`)
-        .setLabel("Avatar")
-        .setStyle(ButtonStyle.Primary);
-      const bannerButton = new ButtonBuilder()
-        .setCustomId(`banner_${message.author.id}`)
-        .setLabel("Banner")
-        .setStyle(ButtonStyle.Secondary);
-      const row = new ActionRowBuilder().addComponents(avatarButton, bannerButton);
-      
-      await message.channel.send({ embeds: [embed], components: [row] });
+      // Generate profile card using Canvas.
+      const width = 700, height = 300;
+      const canvas = createCanvas(width, height);
+      const ctx = canvas.getContext('2d');
+
+      // Draw a gradient background.
+      const gradient = ctx.createLinearGradient(0, 0, width, height);
+      gradient.addColorStop(0, '#2c3e50');
+      gradient.addColorStop(1, '#bdc3c7');
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, width, height);
+
+      // Draw avatar in a circle.
+      const avatarURL = targetUser.displayAvatarURL({ extension: 'png', size: 512 });
+      const avatarImg = await loadImage(avatarURL);
+      const avatarSize = 128;
+      const avatarX = 50, avatarY = 50;
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(avatarX + avatarSize/2, avatarY + avatarSize/2, avatarSize/2, 0, Math.PI*2);
+      ctx.closePath();
+      ctx.clip();
+      ctx.drawImage(avatarImg, avatarX, avatarY, avatarSize, avatarSize);
+      ctx.restore();
+
+      // Write username.
+      ctx.font = '30px Sans';
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(targetUser.username, 200, 90);
+
+      // Write stats.
+      ctx.font = '20px Sans';
+      ctx.fillText(`Level: ${userData.level}`, 200, 130);
+      ctx.fillText(`XP: ${userData.xp} / ${userData.xpNeeded}`, 200, 160);
+      ctx.fillText(`Rep: ${userData.rep}`, 200, 190);
+      ctx.fillText(`Credits: ${userData.credits}`, 200, 220);
+
+      // Draw XP progress bar.
+      const barX = 200, barY = 240, barWidth = 400, barHeight = 20;
+      ctx.fillStyle = '#444444';
+      ctx.fillRect(barX, barY, barWidth, barHeight);
+      const progress = userData.xp / userData.xpNeeded;
+      ctx.fillStyle = '#00ff00';
+      ctx.fillRect(barX, barY, barWidth * progress, barHeight);
+
+      const cardBuffer = canvas.toBuffer();
+      const attachment = { attachment: cardBuffer, name: 'profile.png' };
+      message.channel.send({ files: [attachment] });
     } catch (err) {
-      console.error("Error fetching your profile:", err);
-      message.reply("There was an error fetching your profile.");
-    }
-  }
-  // "A" command: show profile of mentioned user
-  else if (content.toUpperCase().startsWith('A')) {
-    const targetUser = message.mentions.users.first();
-    if (!targetUser) return message.reply("Please mention a user to view their profile.");
-    try {
-      const fullTarget = await targetUser.fetch();
-      const avatarURL = fullTarget.displayAvatarURL({ dynamic: true, size: 1024 });
-      const bannerURL = fullTarget.bannerURL({ dynamic: true, size: 1024 });
-      const embed = new EmbedBuilder()
-        .setColor(0x0099ff)
-        .setTitle(`${fullTarget.username}'s Profile`)
-        .setDescription("Click a button below to view Avatar or Banner.")
-        .setThumbnail(avatarURL)
-        .addFields(
-          { name: "Avatar", value: `[View Avatar](${avatarURL})`, inline: true },
-          { name: "Banner", value: bannerURL ? `[View Banner](${bannerURL})` : "No banner set", inline: true }
-        )
-        .setFooter({ text: `Requested by: ${message.author.username}` });
-      
-      const avatarButton = new ButtonBuilder()
-        .setCustomId(`avatar_${fullTarget.id}`)
-        .setLabel("Avatar")
-        .setStyle(ButtonStyle.Primary);
-      const bannerButton = new ButtonBuilder()
-        .setCustomId(`banner_${fullTarget.id}`)
-        .setLabel("Banner")
-        .setStyle(ButtonStyle.Secondary);
-      const row = new ActionRowBuilder().addComponents(avatarButton, bannerButton);
-      
-      await message.channel.send({ embeds: [embed], components: [row] });
-    } catch (err) {
-      console.error("Error fetching target profile:", err);
-      message.reply("There was an error fetching that user's profile.");
+      console.error("Error generating profile card:", err);
+      message.reply("There was an error generating the profile card.");
     }
   }
 });
 
 // -----------------------
-// BUTTON INTERACTION HANDLER (Profile Buttons)
+// BUTTON INTERACTION HANDLER (for Profile Viewer Buttons)
 // -----------------------
 client.on('interactionCreate', async (interaction) => {
   if (!interaction.isButton()) return;
-  
-  // Expecting customId in format "avatar_userId" or "banner_userId"
+  // Expected customId format: "avatar_userId" or "banner_userId"
   const [action, userId] = interaction.customId.split('_');
   if (!userId) return;
-  
   let targetUser;
   try {
     targetUser = await client.users.fetch(userId, { force: true });
@@ -588,7 +573,6 @@ client.on('interactionCreate', async (interaction) => {
     console.error("Error fetching user for profile:", err);
     return interaction.reply({ content: "Error fetching user data.", ephemeral: true });
   }
-  
   if (action === 'avatar') {
     const avatarURL = targetUser.displayAvatarURL({ dynamic: true, size: 1024 });
     const embed = new EmbedBuilder()
@@ -597,8 +581,7 @@ client.on('interactionCreate', async (interaction) => {
       .setImage(avatarURL)
       .setFooter({ text: `Requested by: ${interaction.user.username}` });
     await interaction.update({ embeds: [embed] });
-  }
-  else if (action === 'banner') {
+  } else if (action === 'banner') {
     const bannerURL = targetUser.bannerURL({ dynamic: true, size: 1024 });
     if (!bannerURL) {
       return interaction.reply({ content: "This user does not have a banner set.", ephemeral: true });
@@ -609,6 +592,113 @@ client.on('interactionCreate', async (interaction) => {
       .setImage(bannerURL)
       .setFooter({ text: `Requested by: ${interaction.user.username}` });
     await interaction.update({ embeds: [embed] });
+  }
+});
+
+// -----------------------
+// MESSAGE COMMAND HANDLER (for Verification and Jail Commands)
+// -----------------------
+
+// Verification commands (+boy / +girl) and jail commands (+jail / +unjail) 
+// are assumed to be part of your existing functionality. (They are in the above code.)
+
+client.on('messageCreate', async (message) => {
+  if (message.author.bot) return;
+  
+  // ----- Verification Commands (+boy / +girl) -----
+  if (message.content.startsWith('+boy') || message.content.startsWith('+girl')) {
+    let sessionId;
+    for (const [vcId, session] of verificationSessions.entries()) {
+      if (message.member.voice.channelId === vcId) {
+        if (!session.assignedVerificator) {
+          session.assignedVerificator = message.author.id;
+          verificationSessions.set(vcId, session);
+        }
+        if (session.assignedVerificator === message.author.id) {
+          sessionId = vcId;
+          break;
+        }
+      }
+    }
+    if (!sessionId) {
+      return message.reply("No active verification session found for you.");
+    }
+    const session = verificationSessions.get(sessionId);
+    const memberToVerify = message.guild.members.cache.get(session.userId);
+    if (!memberToVerify) return message.reply("User not found.");
+    try {
+      await memberToVerify.roles.remove(process.env.ROLE_UNVERIFIED);
+      let verifiedRoleName;
+      if (message.content.startsWith('+boy')) {
+        await memberToVerify.roles.add(process.env.ROLE_VERIFIED_BOY);
+        verifiedRoleName = "Verified Boy";
+      } else {
+        await memberToVerify.roles.add(process.env.ROLE_VERIFIED_GIRL);
+        verifiedRoleName = "Verified Girl";
+      }
+      await memberToVerify.send("# No Toxic Guys Here ❌️☢️ 7na Hna Bash Nchilliw Wnstmt3o Bw9tna ...Mar7ba Bik Mara Akhra ⚘️♥️");
+      message.channel.send(`<@${memberToVerify.id}> was verified as ${verifiedRoleName} successfully!`);
+      // Do not auto-move the verified user; they remain until the verificator leaves.
+      setTimeout(async () => {
+        const verifVC = message.guild.channels.cache.get(sessionId);
+        if (verifVC) {
+          if (verifVC.members.size === 0 || (verifVC.members.size === 1 && verifVC.members.has(message.author.id))) {
+            await verifVC.delete().catch(() => {});
+            verificationSessions.delete(sessionId);
+          }
+        }
+      }, 30000);
+      return message.reply("Verification complete.");
+    } catch (err) {
+      console.error("Verification error:", err);
+      return message.reply("Verification failed.");
+    }
+  }
+  
+  // ----- Jail System (+jail / +unjail) -----
+  if (message.content.startsWith('+jail')) {
+    if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+      return message.reply("You don't have permission to use this command.");
+    }
+    const args = message.content.split(' ');
+    if (args.length < 3) return message.reply("Usage: +jail <userID> <reason>");
+    const targetId = args[1];
+    const reason = args.slice(2).join(' ');
+    const targetMember = message.guild.members.cache.get(targetId);
+    if (!targetMember) return message.reply("User not found.");
+    try {
+      const rolesToRemove = targetMember.roles.cache
+        .filter(role => role.id !== targetMember.guild.id)
+        .map(role => role.id);
+      await targetMember.roles.remove(rolesToRemove, "Jailed: Removing all roles");
+      await targetMember.roles.add(process.env.ROLE_JAILED);
+      const jailVC = message.guild.channels.cache.get(process.env.VOICE_JAIL);
+      if (jailVC) await targetMember.voice.setChannel(jailVC);
+      jailData.set(targetId, reason);
+      try { await targetMember.send("# No Toxic Guys Here ❌️☢️ 7na Hna Bash Nchilliw Wnstmt3o Bw9tna ...Mar7ba Bik Mara Akhra ⚘️♥️"); } catch (e) {}
+      return message.reply(`User ${targetMember.displayName} has been jailed.`);
+    } catch (err) {
+      console.error("Jail error:", err);
+      return message.reply("Failed to jail the user.");
+    }
+  }
+  if (message.content.startsWith('+unjail')) {
+    if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+      return message.reply("You don't have permission to use this command.");
+    }
+    const args = message.content.split(' ');
+    if (args.length < 2) return message.reply("Usage: +unjail <userID>");
+    const targetId = args[1];
+    const targetMember = message.guild.members.cache.get(targetId);
+    if (!targetMember) return message.reply("User not found.");
+    try {
+      await targetMember.roles.remove(process.env.ROLE_JAILED);
+      jailData.delete(targetId);
+      return message.reply(`User ${targetMember.displayName} has been unjailed.`);
+    } catch (err) {
+      console.error("Unjail error:", err);
+      return message.reply("Failed to unjail the user.");
+    }
   }
 });
 

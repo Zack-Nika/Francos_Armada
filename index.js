@@ -1,15 +1,14 @@
 // index.js
-// MBC Super Bot using Discord.js v14 with multiple features:
-// • Verification system: temporary VC with 9s notification in the verification channel.
-//   Only one verificator can claim a session, and verified users remain until the verificator leaves.
-// • One-tap system: private VC (tap) where the creator is the owner; the owner can manage access using /reject (which also kicks the user) and /perm.
-// • Jail system: +jail and +unjail commands (admin-only) remove all roles and add a jail role.
+// MBC Super Bot with multiple features:
+// • Verification system: Creates a temporary VC with a 9s notification when an unverified user joins the verification channel.
+//   Only one verificator can claim the session, and verified users remain until the verificator leaves.
+// • One-tap system: Private VC (tap) where the creator is the owner; owner can manage access using /reject (which kicks) and /perm.
+// • Jail system: +jail and +unjail commands (admin-only) remove all roles then add the jail role.
 // • Profile Viewer:
-//   - "R" command: shows a simple profile picture view with two buttons (Avatar & Banner).
-//   - "P" command: shows a detailed profile card with XP, level, rep, credits, and an XP progress bar.
-//     (If you mention a user, it shows that user's profile; otherwise, it shows your own.)
-// • Slash commands are categorized: admin commands are restricted to admins, while tap/verification commands are available to everyone.
-// • A stylish /help command sends an embed listing available commands.
+//   - "R" command: Shows a simple embed with the user's profile picture.
+//   - "P" command: Generates a detailed profile card (with XP, level, voice level, and an XP progress bar) using Canvas.
+// • Slash commands: Admin commands are restricted, tap/verification commands are available to everyone.
+// • A stylish /help command displays available commands based on your permissions.
 
 require('dotenv').config();
 const {
@@ -28,7 +27,7 @@ const {
   PermissionsBitField
 } = require('discord.js');
 
-// Use @napi-rs/canvas for prebuilt canvas support.
+// Use @napi-rs/canvas for image generation.
 const { createCanvas, loadImage } = require('@napi-rs/canvas');
 
 const client = new Client({
@@ -53,7 +52,7 @@ const jailData = new Map();             // { userId: jailReason }
 // -----------------------
 client.commands = new Collection();
 const slashCommands = [
-  // TAP commands (visible to everyone)
+  // TAP commands (everyone)
   new SlashCommandBuilder()
     .setName('kick')
     .setDescription('Kick a user from your tap')
@@ -90,7 +89,7 @@ const slashCommands = [
     .setDescription('Unmute a user in your voice channel')
     .addUserOption(option => option.setName('target').setDescription('User to unmute').setRequired(true)),
 
-  // ADMIN commands (visible only to administrators)
+  // ADMIN commands (admins only)
   new SlashCommandBuilder()
     .setName('unban')
     .setDescription('Unban a user')
@@ -118,7 +117,7 @@ const slashCommands = [
     .setDescription('Show most online users')
     .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
 
-  // HELP command (visible to everyone)
+  // HELP command (everyone)
   new SlashCommandBuilder().setName('help').setDescription('Show available commands'),
 ];
 
@@ -185,10 +184,9 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
       await member.voice.setChannel(tempVC);
       verificationSessions.set(tempVC.id, { userId: member.id, assignedVerificator: null, rejected: false });
       
-      // Send plain text notification with join button (lasting 9 seconds)
+      // Send notification with join button (9s duration)
       const alertChannel = guild.channels.cache.get(process.env.CHANNEL_VERIFICATION_ALERT);
       if (alertChannel) {
-        console.log(`Sending verification notification in ${alertChannel.name}`);
         const joinButton = new ButtonBuilder()
           .setCustomId(`join_verification_${tempVC.id}`)
           .setLabel("🚀 Join Verification")
@@ -215,7 +213,6 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
         parent: newState.channel.parentId,
         permissionOverwrites: [{ id: guild.id, allow: [PermissionsBitField.Flags.Connect] }]
       });
-      console.log(`Created one-tap VC: ${tempVC.name} for ${member.displayName}`);
       onetapSessions.set(tempVC.id, { owner: member.id, rejectedUsers: [] });
       await member.voice.setChannel(tempVC);
     } catch (err) {
@@ -223,7 +220,7 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
     }
   }
 
-  // ----- When a user joins a one-tap channel, check if they're rejected -----
+  // ----- Check for rejected users in one-tap channels -----
   if (newState.channel && onetapSessions.has(newState.channel.id)) {
     const tapSession = onetapSessions.get(newState.channel.id);
     if (tapSession.rejectedUsers && tapSession.rejectedUsers.includes(newState.member.id)) {
@@ -232,7 +229,7 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
     }
   }
 
-  // ----- One-Tap Channel Owner Reassignment -----
+  // ----- One-Tap Owner Reassignment -----
   if (oldState.channel && onetapSessions.has(oldState.channel.id)) {
     let tapSession = onetapSessions.get(oldState.channel.id);
     if (oldState.member.id === tapSession.owner) {
@@ -241,26 +238,23 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
         const newOwner = remaining.first();
         tapSession.owner = newOwner.id;
         onetapSessions.set(oldState.channel.id, tapSession);
-        console.log(`Reassigned one-tap VC ${oldState.channel.name} to ${newOwner.displayName}`);
         await oldState.channel.permissionOverwrites.edit(newOwner.id, { Connect: true });
       }
     }
   }
 
-  // ----- Verification VC: When verificator leaves, then move the verified user (if still present) -----
+  // ----- Verification VC: When verificator leaves, move verified user if present -----
   if (oldState.channel && verificationSessions.has(oldState.channel.id)) {
     const session = verificationSessions.get(oldState.channel.id);
     if (oldState.member.id === session.assignedVerificator) {
       if (oldState.channel.members.has(session.userId)) {
         const verifiedMember = oldState.channel.members.get(session.userId);
-        // Only move the verified user if they're not already in a one-tap channel.
         if (!verifiedMember.voice.channel || !onetapSessions.has(verifiedMember.voice.channel.id)) {
           const activeVC = guild.channels.cache
             .filter(ch => ch.type === 2 && ch.id !== oldState.channel.id && ch.members.size > 0)
             .first();
           if (activeVC) {
             await verifiedMember.voice.setChannel(activeVC);
-            console.log(`Moved verified member ${verifiedMember.displayName} to ${activeVC.name} because verificator left.`);
           }
         }
       }
@@ -271,7 +265,6 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
   if (oldState.channel && oldState.channel.members.size === 0) {
     const channelId = oldState.channel.id;
     if (verificationSessions.has(channelId) || onetapSessions.has(channelId)) {
-      console.log(`Deleting empty VC: ${oldState.channel.name}`);
       oldState.channel.delete().catch(() => {});
       verificationSessions.delete(channelId);
       onetapSessions.delete(channelId);
@@ -283,7 +276,7 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
 // INTERACTION HANDLER
 // -----------------------
 client.on('interactionCreate', async (interaction) => {
-  // ----- Button Interaction for Verification Join -----
+  // ----- Button for Verification Join -----
   if (interaction.isButton() && interaction.customId.startsWith("join_verification_")) {
     const vcId = interaction.customId.split("_").pop();
     const session = verificationSessions.get(vcId);
@@ -300,7 +293,7 @@ client.on('interactionCreate', async (interaction) => {
         const invite = await channel.createInvite({ maxAge: 300, maxUses: 1 });
         return interaction.reply({ content: `You're not in a voice channel. Use this invite link: ${invite.url}`, ephemeral: true });
       } catch (e) {
-        return interaction.reply({ content: "Oops, something went wrong. Please join a voice channel and try again.", ephemeral: true });
+        return interaction.reply({ content: "Error: Please join a voice channel and try again.", ephemeral: true });
       }
     }
     if (member.voice.channelId !== vcId) {
@@ -314,12 +307,11 @@ client.on('interactionCreate', async (interaction) => {
   else if (interaction.isChatInputCommand()) {
     const { commandName } = interaction;
     const memberVC = interaction.member.voice.channel;
-    if (!memberVC) return interaction.reply({ content: "You must be in a voice channel to use this command.", ephemeral: true });
+    if (!memberVC) return interaction.reply({ content: "You must be in a voice channel.", ephemeral: true });
     
-    // Handle /reject and /perm in one-tap channels:
     if (commandName === "reject") {
       if (!onetapSessions.has(memberVC.id)) {
-        return interaction.reply({ content: "This command only works in one-tap channels.", ephemeral: true });
+        return interaction.reply({ content: "This command works only in one-tap channels.", ephemeral: true });
       }
       let tapSession = onetapSessions.get(memberVC.id);
       if (tapSession.owner !== interaction.user.id) {
@@ -340,7 +332,7 @@ client.on('interactionCreate', async (interaction) => {
     }
     else if (commandName === "perm") {
       if (!onetapSessions.has(memberVC.id)) {
-        return interaction.reply({ content: "This command only works in one-tap channels.", ephemeral: true });
+        return interaction.reply({ content: "This command works only in one-tap channels.", ephemeral: true });
       }
       let tapSession = onetapSessions.get(memberVC.id);
       if (tapSession.owner !== interaction.user.id) {
@@ -356,7 +348,6 @@ client.on('interactionCreate', async (interaction) => {
         return interaction.reply({ content: `${targetUser.tag} is not currently rejected in this tap.`, ephemeral: true });
       }
     }
-    // Mute / Unmute Commands:
     else if (commandName === "mute") {
       const target = interaction.options.getUser('target');
       const targetMember = interaction.guild.members.cache.get(target.id);
@@ -385,7 +376,6 @@ client.on('interactionCreate', async (interaction) => {
         return interaction.reply({ content: "Failed to unmute the user.", ephemeral: true });
       }
     }
-    // Other One-Tap Commands:
     else if (commandName === "claim") {
       if (!onetapSessions.has(memberVC.id)) {
         return interaction.reply({ content: "You are not in a private tap channel.", ephemeral: true });
@@ -527,40 +517,38 @@ client.on('messageCreate', async (message) => {
       console.error("Error fetching user data:", err);
       return message.reply("Error fetching user data.");
     }
-    // Dummy user data for profile stats (replace with actual data if available)
+    // Dummy profile data for demonstration
     const userData = {
       level: 38,
       xp: 277,
       xpNeeded: 5348,
-      rep: 0,
-      credits: 1.01,
+      voiceLevel: 10
     };
     try {
       const width = 700, height = 300;
       const canvas = createCanvas(width, height);
       const ctx = canvas.getContext('2d');
-      // Draw a gradient background.
+      // Gradient background.
       const gradient = ctx.createLinearGradient(0, 0, width, height);
       gradient.addColorStop(0, '#2c3e50');
       gradient.addColorStop(1, '#bdc3c7');
       ctx.fillStyle = gradient;
       ctx.fillRect(0, 0, width, height);
-      // Get the user's avatar URL using a fallback.
-      let avatarURL = targetUser.displayAvatarURL({ extension: 'png', size: 512 });
-      if (!avatarURL || avatarURL === "") {
-        avatarURL = targetUser.defaultAvatarURL || 'https://cdn.discordapp.com/embed/avatars/0.png';
-      }
+      // Get avatar URL with fallback.
+      let avatarURL = targetUser.avatar 
+        ? targetUser.displayAvatarURL({ extension: 'png', size: 512 })
+        : "https://cdn.discordapp.com/embed/avatars/0.png";
       const avatarImg = await loadImage(avatarURL);
       const avatarSize = 128;
       const avatarX = 50, avatarY = 50;
       ctx.save();
       ctx.beginPath();
-      ctx.arc(avatarX + avatarSize / 2, avatarY + avatarSize / 2, avatarSize / 2, 0, Math.PI * 2);
+      ctx.arc(avatarX + avatarSize/2, avatarY + avatarSize/2, avatarSize/2, 0, Math.PI*2);
       ctx.closePath();
       ctx.clip();
       ctx.drawImage(avatarImg, avatarX, avatarY, avatarSize, avatarSize);
       ctx.restore();
-      // Write the username.
+      // Write username.
       ctx.font = '30px Sans';
       ctx.fillStyle = '#ffffff';
       ctx.fillText(targetUser.username, 200, 90);
@@ -568,18 +556,16 @@ client.on('messageCreate', async (message) => {
       ctx.font = '20px Sans';
       ctx.fillText(`Level: ${userData.level}`, 200, 130);
       ctx.fillText(`XP: ${userData.xp} / ${userData.xpNeeded}`, 200, 160);
-      ctx.fillText(`Rep: ${userData.rep}`, 200, 190);
-      ctx.fillText(`Credits: ${userData.credits}`, 200, 220);
-      // Draw an XP progress bar.
-      const barX = 200, barY = 240, barWidth = 400, barHeight = 20;
+      ctx.fillText(`Voice Level: ${userData.voiceLevel}`, 200, 190);
+      // XP progress bar.
+      const barX = 200, barY = 220, barWidth = 400, barHeight = 20;
       ctx.fillStyle = '#444444';
       ctx.fillRect(barX, barY, barWidth, barHeight);
       const progress = userData.xp / userData.xpNeeded;
       ctx.fillStyle = '#00ff00';
       ctx.fillRect(barX, barY, barWidth * progress, barHeight);
-      const cardBuffer = canvas.toBuffer();
-      const attachment = { attachment: cardBuffer, name: 'profile.png' };
-      message.channel.send({ files: [attachment] });
+      const buffer = canvas.toBuffer();
+      await message.channel.send({ files: [{ attachment: buffer, name: 'profile.png' }] });
     } catch (err) {
       console.error("Error generating profile card:", err);
       message.reply("There was an error generating the profile card.");
@@ -588,7 +574,7 @@ client.on('messageCreate', async (message) => {
 });
 
 // -----------------------
-// BUTTON INTERACTION HANDLER (for Profile Viewer Buttons)
+// BUTTON INTERACTION HANDLER (Profile Viewer Buttons)
 // -----------------------
 client.on('interactionCreate', async (interaction) => {
   if (!interaction.isButton()) return;
@@ -624,12 +610,12 @@ client.on('interactionCreate', async (interaction) => {
 });
 
 // -----------------------
-// MESSAGE COMMAND HANDLER (Verification & Jail Commands)
+// Additional Message Commands (Verification & Jail)
 // -----------------------
 client.on('messageCreate', async (message) => {
   if (message.author.bot) return;
   
-  // ----- Verification Commands (+boy / +girl) -----
+  // Verification Commands (+boy / +girl)
   if (message.content.startsWith('+boy') || message.content.startsWith('+girl')) {
     let sessionId;
     for (const [vcId, session] of verificationSessions.entries()) {
@@ -662,7 +648,6 @@ client.on('messageCreate', async (message) => {
       }
       await memberToVerify.send("# No Toxic Guys Here ❌️☢️ 7na Hna Bash Nchilliw Wnstmt3o Bw9tna ...Mar7ba Bik Mara Akhra ⚘️♥️");
       message.channel.send(`<@${memberToVerify.id}> was verified as ${verifiedRoleName} successfully!`);
-      // Do not auto-move the verified user; they remain until the verificator leaves.
       setTimeout(async () => {
         const verifVC = message.guild.channels.cache.get(sessionId);
         if (verifVC) {
@@ -679,7 +664,7 @@ client.on('messageCreate', async (message) => {
     }
   }
   
-  // ----- Jail System (+jail / +unjail) -----
+  // Jail System (+jail / +unjail)
   if (message.content.startsWith('+jail')) {
     if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
       return message.reply("You don't have permission to use this command.");

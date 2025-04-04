@@ -1,13 +1,14 @@
 {
-  "name": "discord-verification-bot",
+  "name": "mbc-super-bot",
   "version": "1.0.0",
-  "description": "A Discord.js verification bot for assigning roles and tracking verificator stats.",
+  "description": "A multi-feature Discord bot",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
-    "discord.js": "^14.11.0",
-    "dotenv": "^16.0.3"
+    "discord.js": "^14.0.0",
+    "dotenv": "^16.0.0",
+    "@napi-rs/canvas": "^0.1.68"
   }
 }

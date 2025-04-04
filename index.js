@@ -356,7 +356,7 @@ client.on('interactionCreate', async (interaction) => {
         return interaction.reply({ content: `${targetUser.tag} is not currently rejected in this tap.`, ephemeral: true });
       }
     }
-    // Mute and Unmute Commands:
+    // Mute / Unmute Commands:
     else if (commandName === "mute") {
       const target = interaction.options.getUser('target');
       const targetMember = interaction.guild.members.cache.get(target.id);
@@ -545,8 +545,11 @@ client.on('messageCreate', async (message) => {
       gradient.addColorStop(1, '#bdc3c7');
       ctx.fillStyle = gradient;
       ctx.fillRect(0, 0, width, height);
-      // Get the user's avatar URL using defaultAvatarURL as fallback.
-      let avatarURL = targetUser.avatar ? targetUser.displayAvatarURL({ extension: 'png', size: 512 }) : targetUser.defaultAvatarURL;
+      // Get the user's avatar URL using a fallback.
+      let avatarURL = targetUser.displayAvatarURL({ extension: 'png', size: 512 });
+      if (!avatarURL || avatarURL === "") {
+        avatarURL = targetUser.defaultAvatarURL || 'https://cdn.discordapp.com/embed/avatars/0.png';
+      }
       const avatarImg = await loadImage(avatarURL);
       const avatarSize = 128;
       const avatarX = 50, avatarY = 50;

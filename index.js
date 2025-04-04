@@ -2,13 +2,14 @@
 // MBC Super Bot using Discord.js v14 with multiple features:
 // • Verification system: temporary VC with 9s notification in the verification channel.
 //   Only one verificator can claim a session, and verified users remain until the verificator leaves.
-// • One-tap system: private VC (tap) where the creator is the owner; the owner may manage access using /reject (which also kicks the user) and /perm.
+// • One-tap system: private VC (tap) where the creator is the owner; the owner can manage access using /reject (which also kicks the user) and /perm.
 // • Jail system: +jail and +unjail commands (admin-only) remove all roles and add a jail role.
 // • Profile Viewer:
 //   - "R" command: shows a simple profile picture view with two buttons (Avatar & Banner).
 //   - "P" command: shows a detailed profile card with XP, level, rep, credits, and an XP progress bar.
+//     (For "P", if you mention a user, it shows that user's profile; otherwise, it shows your own.)
 // • Slash commands are categorized: admin commands are restricted to admins, while tap/verification commands are available to everyone.
-// • A stylish /help command sends an embed listing the available commands.
+// • A stylish /help command sends an embed listing available commands.
 
 require('dotenv').config();
 const {
@@ -492,6 +493,7 @@ client.on(Events.InteractionCreate, async interaction => {
 client.on('messageCreate', async (message) => {
   if (message.author.bot) return;
   const content = message.content.trim();
+  
   // ----- R COMMAND: Show profile picture view with buttons -----
   if (content.toLowerCase().startsWith('r')) {
     let targetUser = message.mentions.users.first() || message.author;
@@ -544,10 +546,9 @@ client.on('messageCreate', async (message) => {
       gradient.addColorStop(1, '#bdc3c7');
       ctx.fillStyle = gradient;
       ctx.fillRect(0, 0, width, height);
-      // Draw the user's avatar in a circle.
+      // Get the user's avatar URL with a fallback.
       let avatarURL = targetUser.displayAvatarURL({ extension: 'png', size: 512 });
-      if (!avatarURL) {
-        // Fallback to default avatar (based on discriminator)
+      if (!avatarURL || avatarURL === "") {
         avatarURL = `https://cdn.discordapp.com/embed/avatars/${parseInt(targetUser.discriminator) % 5}.png`;
       }
       const avatarImg = await loadImage(avatarURL);
@@ -588,7 +589,7 @@ client.on('messageCreate', async (message) => {
 });
 
 // -----------------------
-// BUTTON INTERACTION HANDLER (Profile Viewer Buttons)
+// BUTTON INTERACTION HANDLER (for Profile Viewer Buttons)
 // -----------------------
 client.on('interactionCreate', async (interaction) => {
   if (!interaction.isButton()) return;
@@ -628,6 +629,7 @@ client.on('interactionCreate', async (interaction) => {
 // -----------------------
 client.on('messageCreate', async (message) => {
   if (message.author.bot) return;
+  
   // ----- Verification Commands (+boy / +girl) -----
   if (message.content.startsWith('+boy') || message.content.startsWith('+girl')) {
     let sessionId;

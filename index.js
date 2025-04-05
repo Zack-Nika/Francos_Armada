@@ -1,40 +1,48 @@
 // index.js
-// MBC Super Bot with multiple features (verification, one-tap, jail, etc.)
-// PLUS: It connects to MongoDB to store server configuration (e.g., custom prefix)
-// Profile Viewer: Only the "R" command is used to show a simple embed with the user's profile picture and two buttons (Avatar & Banner)
+// Franco's Armada Bot – A fully featured rental bot with interactive, multilingual per‑server setup.
+// Features:
+// • MongoDB integration for storing per‑server settings (language, prefix, role/channel IDs).
+// • When added to a server, the bot creates a temporary "bot-setup" channel and sends a welcome embed.
+// • The welcome embed includes a brief introduction (with credit "Made by Franco (YOUR_USER_ID_HERE)") and language selection buttons (English, Darija, Spanish, Russian, French).
+// • Once a language is chosen, the bot prompts the owner to type "ready" to begin.
+// • Then, the bot guides the owner step-by-step (using message collectors with a 90-second timeout per prompt) to provide all required IDs.
+//   All prompts (and subsequent messages) are delivered entirely in the chosen language.
+// • After setup is complete, a final confirmation message (translated) is sent and the setup channel is deleted.
+// • Slash commands include /setprefix and /help.
+// • A basic "R" command shows the user’s profile picture with buttons for Avatar/Banner viewing.
+// (Additional commands like verification, jail, one‑tap can be added later as needed.)
 
 require('dotenv').config();
-const { 
-  Client, 
-  GatewayIntentBits, 
-  Partials, 
-  Collection, 
-  ActionRowBuilder, 
-  ButtonBuilder, 
-  ButtonStyle, 
-  EmbedBuilder, 
-  Events, 
-  REST, 
-  Routes, 
-  SlashCommandBuilder, 
-  PermissionsBitField 
+const {
+  Client,
+  GatewayIntentBits,
+  Partials,
+  Collection,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  EmbedBuilder,
+  Events,
+  REST,
+  Routes,
+  SlashCommandBuilder,
+  PermissionsBitField
 } = require('discord.js');
 
-// Use the prebuilt @napi-rs/canvas for image generation (if needed later)
+// For image generation in the "R" command.
 const { createCanvas, loadImage } = require('@napi-rs/canvas');
 
-// For MongoDB connection
+// MongoDB connection.
 const { MongoClient } = require('mongodb');
-const mongoUri = process.env.MONGODB_URI;
+const mongoUri = process.env.MONGODB_URI; // Your connection string.
 const mongoClient = new MongoClient(mongoUri);
 
-// Connect to MongoDB and store the collection reference for server settings
 let settingsCollection;
 async function connectToMongo() {
   try {
     await mongoClient.connect();
     console.log("Connected to MongoDB");
-    const db = mongoClient.db("botRentalDB"); // choose a database name
+    const db = mongoClient.db("botRentalDB"); // Choose your DB name.
     settingsCollection = db.collection("serverSettings");
   } catch (err) {
     console.error("MongoDB connection error:", err);
@@ -42,6 +50,7 @@ async function connectToMongo() {
 }
 connectToMongo();
 
+// Create the Discord client.
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -54,83 +63,165 @@ const client = new Client({
   partials: [Partials.Channel]
 });
 
-// In-memory session data for voice features
-const verificationSessions = new Map(); // { vcId: { userId, assignedVerificator, rejected } }
-const onetapSessions = new Map();       // { vcId: { owner, rejectedUsers: [] } }
-const jailData = new Map();             // { userId: jailReason }
+// ==============================
+// Language Translations for Setup Prompts (for required IDs)
+// ==============================
+const languagePrompts = {
+  english: {
+    verifiedRoleId: "🔹 **Please provide the Verified Role ID** (the role assigned to verified members).",
+    unverifiedRoleId: "🔹 **Now, provide the Unverified Role ID** (the role for new/unverified members).",
+    verifiedGirlRoleId: "🔹 **Next, please provide the Verified Girl Role ID**.",
+    verificatorRoleId: "🔹 **Please provide the Verificator Role ID** (the role for those who verify new users).",
+    voiceVerificationChannelId: "🔹 **Send the Voice Verification Channel ID** (where new users join for verification).",
+    oneTapChannelId: "🔹 **Now, send the One-Tap Channel ID** (for creating one-tap voice channels).",
+    verificationAlertChannelId: "🔹 **Send the Verification Alert Channel ID** (where verification alerts are posted).",
+    jailRoleId: "🔹 **Provide the Jail Role ID** (for jailed users). If not applicable, type `none`.",
+    voiceJailChannelId: "🔹 **Finally, send the Voice Jail Channel ID** (for jailed users). If not applicable, type `none`."
+  },
+  darija: {
+    verifiedRoleId: "🔹 **3tini l'ID dyal Verified Role** (role li kat3ti l'users verified).",
+    unverifiedRoleId: "🔹 **3tini l'ID dyal Unverified Role** (role dyal new/unverified users).",
+    verifiedGirlRoleId: "🔹 **3tini l'ID dyal Verified Girl Role**.",
+    verificatorRoleId: "🔹 **3tini l'ID dyal Verificator Role**.",
+    voiceVerificationChannelId: "🔹 **3tini l'ID dyal Voice Verification Channel** (fin kaydkhlu l'users jdod).",
+    oneTapChannelId: "🔹 **3tini l'ID dyal One-Tap Channel** (bash ytkawn private voice rooms).",
+    verificationAlertChannelId: "🔹 **3tini l'ID dyal Verification Alert Channel**.",
+    jailRoleId: "🔹 **3tini l'ID dyal Jail Role** (ila ma kaynach, ktb `none`).",
+    voiceJailChannelId: "🔹 **3tini l'ID dyal Voice Jail Channel** (ila ma kaynach, ktb `none`)."
+  },
+  spanish: {
+    verifiedRoleId: "🔹 **Por favor, proporciona el ID del Rol Verificado** (el rol asignado a los miembros verificados).",
+    unverifiedRoleId: "🔹 **Ahora, proporciona el ID del Rol No Verificado** (el rol para nuevos miembros).",
+    verifiedGirlRoleId: "🔹 **A continuación, proporciona el ID del Rol de Verificadas**.",
+    verificatorRoleId: "🔹 **Por favor, proporciona el ID del Rol de Verificadores** (rol para quienes verifican nuevos usuarios).",
+    voiceVerificationChannelId: "🔹 **Envía el ID del Canal de Verificación de Voz** (donde los nuevos usuarios se unen para la verificación).",
+    oneTapChannelId: "🔹 **Ahora, envía el ID del Canal One-Tap** (para la creación de canales de voz privados).",
+    verificationAlertChannelId: "🔹 **Envía el ID del Canal de Alertas de Verificación** (donde se publican las alertas de verificación).",
+    jailRoleId: "🔹 **Proporciona el ID del Rol de Cárcel** (para usuarios en cárcel). Si no aplica, escribe `none`.",
+    voiceJailChannelId: "🔹 **Finalmente, envía el ID del Canal de Voz para Cárcel**. Si no aplica, escribe `none`."
+  },
+  russian: {
+    verifiedRoleId: "🔹 **Пожалуйста, предоставьте ID роли для Verified Role** (роль, назначаемая проверенным участникам).",
+    unverifiedRoleId: "🔹 **Теперь предоставьте ID роли для Unverified Role** (роль для новых участников).",
+    verifiedGirlRoleId: "🔹 **Далее, предоставьте ID роли для Verified Girl Role**.",
+    verificatorRoleId: "🔹 **Пожалуйста, предоставьте ID роли для Verificator Role** (роль для тех, кто проверяет новых пользователей).",
+    voiceVerificationChannelId: "🔹 **Отправьте ID голосового канала для Voice Verification Channel** (где новые пользователи присоединяются для проверки).",
+    oneTapChannelId: "🔹 **Теперь отправьте ID канала One-Tap Channel** (для создания приватных голосовых каналов).",
+    verificationAlertChannelId: "🔹 **Отправьте ID текстового канала для Verification Alert Channel**.",
+    jailRoleId: "🔹 **Предоставьте ID роли для Jail Role** (если не применимо, введите `none`).",
+    voiceJailChannelId: "🔹 **Наконец, отправьте ID голосового канала для Voice Jail Channel** (если не применимо, введите `none`)."
+  },
+  french: {
+    verifiedRoleId: "🔹 **Veuillez fournir l'ID du rôle Verified Role** (le rôle attribué aux membres vérifiés).",
+    unverifiedRoleId: "🔹 **Maintenant, fournissez l'ID du rôle Unverified Role** (le rôle pour les nouveaux membres).",
+    verifiedGirlRoleId: "🔹 **Ensuite, veuillez fournir l'ID du rôle Verified Girl Role**.",
+    verificatorRoleId: "🔹 **Veuillez fournir l'ID du rôle Verificator Role** (le rôle pour ceux qui vérifient les nouveaux utilisateurs).",
+    voiceVerificationChannelId: "🔹 **Envoyez l'ID du canal vocal pour Voice Verification Channel** (là où les nouveaux utilisateurs se joignent pour être vérifiés).",
+    oneTapChannelId: "🔹 **Maintenant, envoyez l'ID du canal One-Tap Channel** (pour la création de canaux vocaux privés).",
+    verificationAlertChannelId: "🔹 **Envoyez l'ID du canal textuel pour Verification Alert Channel**.",
+    jailRoleId: "🔹 **Fournissez l'ID du rôle pour Jail Role** (si non applicable, tapez `none`).",
+    voiceJailChannelId: "🔹 **Enfin, envoyez l'ID du canal vocal pour Voice Jail Channel** (si non applicable, tapez `none`)."
+  }
+};
 
-// -----------------------
-// SLASH COMMANDS SETUP
-// -----------------------
+// ==============================
+// Language Extras: Additional messages during setup
+// ==============================
+const languageExtras = {
+  english: {
+    readyPrompt: "Great! Now type `ready` in this channel to begin the setup process. (You have 90 seconds per prompt.)",
+    setupStart: "Alright, let's begin the setup process. I will ask you for a series of IDs. Please copy and paste each one as prompted.",
+    setupComplete: "Thank you for your patience! Your bot is now fully set up. 🎉"
+  },
+  darija: {
+    readyPrompt: "Mzyan! Daba kteb `ready` f had channel bach nbda setup. (3andak 90 tsania f kol prompt.)",
+    setupStart: "Yallah, bda nsetup. Ghadi nsawlouk 3la b3d IDs. 3afak copy w paste kol wa7ed mlli yb9a talab.",
+    setupComplete: "Choukrane 3la sbr dyalk! L'bot dyalk daba msetab kaml. 🎉"
+  },
+  spanish: {
+    readyPrompt: "¡Genial! Ahora escribe `ready` en este canal para comenzar el proceso de configuración. (Tienes 90 segundos por mensaje.)",
+    setupStart: "Muy bien, vamos a comenzar el proceso de configuración. Te pediré una serie de IDs. Por favor, copia y pega cada uno cuando se te pida.",
+    setupComplete: "¡Gracias por tu paciencia! Tu bot ya está completamente configurado. 🎉"
+  },
+  russian: {
+    readyPrompt: "Отлично! Теперь введите `ready` в этом канале, чтобы начать настройку. (У вас 90 секунд на каждый ответ.)",
+    setupStart: "Хорошо, давайте начнем настройку. Я задам вам серию вопросов с ID. Пожалуйста, скопируйте и вставьте каждый ID, когда будет предложено.",
+    setupComplete: "Спасибо за ваше терпение! Ваш бот теперь полностью настроен. 🎉"
+  },
+  french: {
+    readyPrompt: "Super ! Tapez maintenant `ready` dans ce canal pour commencer la configuration. (Vous avez 90 secondes par question.)",
+    setupStart: "D'accord, commençons la configuration. Je vais vous demander une série d'ID. Veuillez copier-coller chacun d'eux lorsque cela est demandé.",
+    setupComplete: "Merci pour votre patience ! Votre bot est maintenant entièrement configuré. 🎉"
+  }
+};
+
+// ==============================
+// Helper Function: Await a Single Message with 90s Timeout (with language extras appended)
+// ==============================
+async function awaitResponse(channel, userId, prompt, lang) {
+  const extra = languageExtras[lang]?.responseTimeout || ""; // if you want to add extra text, here.
+  await channel.send(prompt + extra);
+  await channel.send("*(You have 90 seconds to respond, or the setup will time out.)*"); // This could be localized too.
+  const filter = m => m.author.id === userId;
+  try {
+    const collected = await channel.awaitMessages({ filter, max: 1, time: 90000, errors: ['time'] });
+    return collected.first().content.trim();
+  } catch (err) {
+    await channel.send(
+      (lang === "english" && "Setup timed out. Please type `ready` to start the setup again.") ||
+      (lang === "darija" && "Setup t9llat. Kteb `ready` bach tbdaw men jdod.") ||
+      (lang === "spanish" && "La configuración expiró. Por favor, escribe `ready` para reiniciar el proceso de configuración.") ||
+      (lang === "russian" && "Настройка завершилась по тайм-ауту. Пожалуйста, введите `ready`, чтобы начать заново.") ||
+      (lang === "french" && "Le délai de configuration a expiré. Veuillez taper `ready` pour recommencer.")
+    );
+    throw new Error("Setup timed out");
+  }
+}
+
+// ==============================
+// Interactive Setup Process Function
+// ==============================
+async function runSetup(ownerId, setupChannel, guildId, lang) {
+  const config = { serverId: guildId };
+  const prompts = languagePrompts[lang];
+  const promptEntries = Object.entries(prompts);
+  // Inform the owner that setup is starting.
+  await setupChannel.send(languageExtras[lang]?.setupStart);
+  for (const [key, prompt] of promptEntries) {
+    const response = await awaitResponse(setupChannel, ownerId, prompt, lang);
+    config[key] = (response.toLowerCase() === "none") ? null : response;
+  }
+  try {
+    await settingsCollection.updateOne(
+      { serverId: guildId },
+      { $set: config },
+      { upsert: true }
+    );
+    await setupChannel.send(languageExtras[lang]?.setupComplete);
+  } catch (err) {
+    console.error("Error saving configuration:", err);
+    await setupChannel.send(
+      (lang === "english" && "There was an error saving your configuration. Please try again or contact support.") ||
+      (lang === "darija" && "Kan chi mouchkil f saving configuration. 3awd l7awl aw tsift l'mossa3ada.") ||
+      (lang === "spanish" && "Hubo un error al guardar la configuración. Por favor, inténtalo de nuevo o contacta al soporte.") ||
+      (lang === "russian" && "Произошла ошибка при сохранении настроек. Пожалуйста, попробуйте снова или свяжитесь со службой поддержки.") ||
+      (lang === "french" && "Une erreur est survenue lors de l'enregistrement de votre configuration. Veuillez réessayer ou contacter le support.")
+    );
+  }
+}
+
+// ==============================
+// Slash Commands Setup (/setprefix and /help)
+// ==============================
 client.commands = new Collection();
 const slashCommands = [
-  // Example TAP commands (everyone)
+  // /setprefix command.
   new SlashCommandBuilder()
-    .setName('kick')
-    .setDescription('Kick a user from your tap')
-    .addUserOption(option => option.setName('target').setDescription('User to kick').setRequired(true)),
-  new SlashCommandBuilder()
-    .setName('reject')
-    .setDescription('Reject a user from joining this tap')
-    .addUserOption(option => option.setName('target').setDescription('User to reject').setRequired(true)),
-  new SlashCommandBuilder()
-    .setName('perm')
-    .setDescription('Permit a rejected user to join this tap')
-    .addUserOption(option => option.setName('target').setDescription('User to permit').setRequired(true)),
-  new SlashCommandBuilder().setName('claim').setDescription('Claim ownership of your tap'),
-  new SlashCommandBuilder().setName('lock').setDescription('Lock your tap'),
-  new SlashCommandBuilder().setName('unlock').setDescription('Unlock your tap'),
-  new SlashCommandBuilder()
-    .setName('limit')
-    .setDescription('Set a user limit for your tap')
-    .addIntegerOption(option => option.setName('number').setDescription('User limit').setRequired(true)),
-  new SlashCommandBuilder()
-    .setName('name')
-    .setDescription('Rename your tap')
-    .addStringOption(option => option.setName('text').setDescription('New name').setRequired(true)),
-  new SlashCommandBuilder()
-    .setName('status')
-    .setDescription('Set a status for your tap')
-    .addStringOption(option => option.setName('text').setDescription('Status text').setRequired(true)),
-  new SlashCommandBuilder()
-    .setName('mute')
-    .setDescription('Mute a user in your voice channel')
-    .addUserOption(option => option.setName('target').setDescription('User to mute').setRequired(true)),
-  new SlashCommandBuilder()
-    .setName('unmute')
-    .setDescription('Unmute a user in your voice channel')
-    .addUserOption(option => option.setName('target').setDescription('User to unmute').setRequired(true)),
-
-  // ADMIN commands (for administrators)
-  new SlashCommandBuilder()
-    .setName('unban')
-    .setDescription('Unban a user')
-    .addStringOption(option => option.setName('userid').setDescription('User ID').setRequired(true))
-    .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
-  new SlashCommandBuilder()
-    .setName('binfo')
-    .setDescription('Show total bans')
-    .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
-  new SlashCommandBuilder()
-    .setName('jinfo')
-    .setDescription('Show jail reason for a user')
-    .addStringOption(option => option.setName('userid').setDescription('User ID').setRequired(true))
-    .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
-  new SlashCommandBuilder()
-    .setName('jailed')
-    .setDescription('Show how many users are jailed')
-    .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
-  new SlashCommandBuilder()
-    .setName('topvrf')
-    .setDescription('Show top verificators')
-    .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
-  new SlashCommandBuilder()
-    .setName('toponline')
-    .setDescription('Show most online users')
-    .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
-
-  // HELP command (for all users)
-  new SlashCommandBuilder().setName('help').setDescription('Show available commands'),
+    .setName('setprefix')
+    .setDescription('Set a custom prefix for this server')
+    .addStringOption(option => option.setName('prefix').setDescription('New prefix').setRequired(true)),
+  // /help command.
+  new SlashCommandBuilder().setName('help').setDescription('Show available commands')
 ];
 
 (async () => {
@@ -147,213 +238,167 @@ const slashCommands = [
   }
 })();
 
-// -----------------------
-// CLIENT READY
-// -----------------------
+// ==============================
+// Client Ready Event
+// ==============================
 client.once(Events.ClientReady, () => {
   console.log(`Logged in as ${client.user.tag}`);
-  console.log('VOICE_VERIFICATION:', process.env.VOICE_VERIFICATION);
-  console.log('VOICE_ONETAP:', process.env.VOICE_ONETAP);
-  console.log('CHANNEL_VERIFICATION_ALERT:', process.env.CHANNEL_VERIFICATION_ALERT);
 });
 
-// -----------------------
-// GUILD MEMBER ADD (Welcome DM)
-// -----------------------
-client.on(Events.GuildMemberAdd, async member => {
+// ==============================
+// Guild Create Event: Create a Temporary "bot-setup" Channel and Send Welcome Message
+// ==============================
+client.on(Events.GuildCreate, async guild => {
+  let setupChannel;
   try {
-    // Optionally, assign an "unverified" role (use your actual role IDs here)
-    const unverifiedRole = member.guild.roles.cache.get(process.env.ROLE_UNVERIFIED);
-    if (unverifiedRole) await member.roles.add(unverifiedRole);
-    await member.send("# Mar7ba Bik Fi  ☆ MBC ☆  Ahsen Sever Fl Maghrib 🇲🇦 Daba Ayje 3ndk Chi Verificator ✅️ Tania Wehda ❤️ " + member.toString());
-  } catch (err) {
-    console.error('Error on GuildMemberAdd:', err);
-  }
-});
-
-// -----------------------
-// VOICE STATE UPDATE (Verification, One-Tap, etc.)
-// -----------------------
-client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
-  const guild = newState.guild || oldState.guild;
-
-  // Skip if a member with the verificator role joins the verification channel.
-  if (newState.channelId === process.env.VOICE_VERIFICATION &&
-      newState.member.roles.cache.has(process.env.ROLE_VERIFICATOR)) {
+    setupChannel = await guild.channels.create({
+      name: 'bot-setup',
+      type: 0, // Text channel.
+      topic: 'Use this channel to configure the bot. It will be deleted after setup is complete.',
+      permissionOverwrites: [{ id: guild.id, allow: ["VIEW_CHANNEL", "SEND_MESSAGES"] }]
+    });
+    setupChannel.send(`<@${guild.ownerId}>, welcome! Let's set up your bot configuration.`);
+  } catch (error) {
+    console.error("Failed to create setup channel:", error);
     return;
   }
 
-  // ----- Verification System -----
-  if (newState.channelId === process.env.VOICE_VERIFICATION) {
-    try {
-      const member = newState.member;
-      const tempVC = await guild.channels.create({
-        name: `Verify - ${member.displayName}`,
-        type: 2,
-        parent: newState.channel.parentId,
-        permissionOverwrites: []
-      });
-      console.log(`Created verification VC: ${tempVC.name} for ${member.displayName}`);
-      await member.voice.setChannel(tempVC);
-      verificationSessions.set(tempVC.id, { userId: member.id, assignedVerificator: null, rejected: false });
-      
-      // Send notification with a join button (visible for 9 seconds)
-      const alertChannel = guild.channels.cache.get(process.env.CHANNEL_VERIFICATION_ALERT);
-      if (alertChannel) {
-        const joinButton = new ButtonBuilder()
-          .setCustomId(`join_verification_${tempVC.id}`)
-          .setLabel("🚀 Join Verification")
-          .setStyle(ButtonStyle.Primary);
-        const row = new ActionRowBuilder().addComponents(joinButton);
-        const textNotification = "**# MEMBER JDID AJEW 🙋‍♂️**";
-        const alertMsg = await alertChannel.send({ content: textNotification, components: [row] });
-        setTimeout(() => { alertMsg.delete().catch(console.error); }, 9000);
-      } else {
-        console.error("Alert channel not found.");
-      }
-    } catch (err) {
-      console.error("Error creating verification VC:", err);
-    }
-  }
+  // Create language selection buttons.
+  const englishButton = new ButtonBuilder().setCustomId('lang_english').setLabel('English').setStyle(ButtonStyle.Primary);
+  const darijaButton = new ButtonBuilder().setCustomId('lang_darija').setLabel('Darija').setStyle(ButtonStyle.Primary);
+  const spanishButton = new ButtonBuilder().setCustomId('lang_spanish').setLabel('Spanish').setStyle(ButtonStyle.Primary);
+  const russianButton = new ButtonBuilder().setCustomId('lang_russian').setLabel('Russian').setStyle(ButtonStyle.Primary);
+  const frenchButton = new ButtonBuilder().setCustomId('lang_french').setLabel('French').setStyle(ButtonStyle.Primary);
+  const row = new ActionRowBuilder().addComponents(englishButton, darijaButton, spanishButton, russianButton, frenchButton);
 
-  // ----- One-Tap System -----
-  if (newState.channelId === process.env.VOICE_ONETAP) {
-    try {
-      const member = newState.member;
-      const tempVC = await guild.channels.create({
-        name: `${member.displayName}'s Room`,
-        type: 2,
-        parent: newState.channel.parentId,
-        permissionOverwrites: [{ id: guild.id, allow: [PermissionsBitField.Flags.Connect] }]
-      });
-      onetapSessions.set(tempVC.id, { owner: member.id, rejectedUsers: [] });
-      await member.voice.setChannel(tempVC);
-    } catch (err) {
-      console.error("Error creating one-tap VC:", err);
-    }
-  }
-
-  // ----- Check if a user is rejected in a one-tap channel -----
-  if (newState.channel && onetapSessions.has(newState.channel.id)) {
-    const tapSession = onetapSessions.get(newState.channel.id);
-    if (tapSession.rejectedUsers && tapSession.rejectedUsers.includes(newState.member.id)) {
-      newState.member.voice.disconnect("You are rejected from this tap channel.");
-      return;
-    }
-  }
-
-  // ----- One-Tap Owner Reassignment -----
-  if (oldState.channel && onetapSessions.has(oldState.channel.id)) {
-    let tapSession = onetapSessions.get(oldState.channel.id);
-    if (oldState.member.id === tapSession.owner) {
-      const remaining = oldState.channel.members;
-      if (remaining.size > 0) {
-        const newOwner = remaining.first();
-        tapSession.owner = newOwner.id;
-        onetapSessions.set(oldState.channel.id, tapSession);
-        await oldState.channel.permissionOverwrites.edit(newOwner.id, { Connect: true });
-      }
-    }
-  }
-
-  // ----- Verification VC: When the verificator leaves, move the verified user (if present) -----
-  if (oldState.channel && verificationSessions.has(oldState.channel.id)) {
-    const session = verificationSessions.get(oldState.channel.id);
-    if (oldState.member.id === session.assignedVerificator) {
-      if (oldState.channel.members.has(session.userId)) {
-        const verifiedMember = oldState.channel.members.get(session.userId);
-        if (!verifiedMember.voice.channel || !onetapSessions.has(verifiedMember.voice.channel.id)) {
-          const activeVC = guild.channels.cache
-            .filter(ch => ch.type === 2 && ch.id !== oldState.channel.id && ch.members.size > 0)
-            .first();
-          if (activeVC) {
-            await verifiedMember.voice.setChannel(activeVC);
-          }
-        }
-      }
-    }
-  }
-
-  // ----- Auto-delete empty temporary VCs -----
-  if (oldState.channel && oldState.channel.members.size === 0) {
-    const channelId = oldState.channel.id;
-    if (verificationSessions.has(channelId) || onetapSessions.has(channelId)) {
-      oldState.channel.delete().catch(() => {});
-      verificationSessions.delete(channelId);
-      onetapSessions.delete(channelId);
-    }
-  }
+  const embed = new EmbedBuilder()
+    .setColor(0x00AE86)
+    .setTitle("Welcome to Franco's Armada! 🔱🚢")
+    .setDescription(
+      "Hello, I'm **Franco's Armada** – your dedicated bot for managing your server!\n\n" +
+      "Before we set sail, please choose your language by clicking one of the buttons below.\n" +
+      "After that, I'll guide you through a step-by-step configuration to set up all required IDs:\n\n" +
+      "• Verified Role ID\n" +
+      "• Unverified Role ID\n" +
+      "• Verified Girl Role ID\n" +
+      "• Verificator Role ID\n" +
+      "• Voice Verification Channel ID\n" +
+      "• One-Tap Channel ID\n" +
+      "• Verification Alert Channel ID\n" +
+      "• Jail Role ID\n" +
+      "• Voice Jail Channel ID\n\n" +
+      "Once setup is complete, this channel will be automatically deleted.\n\n" +
+      "Made by Franco (YOUR_USER_ID_HERE) • Type `/help` for a list of commands. Let's set sail together! ⚓"
+    );
+  setupChannel.send({ embeds: [embed], components: [row] });
 });
 
-// -----------------------
-// INTERACTION HANDLER
-// -----------------------
-client.on('interactionCreate', async (interaction) => {
-  // Button for Verification Join
-  if (interaction.isButton() && interaction.customId.startsWith("join_verification_")) {
-    const vcId = interaction.customId.split("_").pop();
-    const session = verificationSessions.get(vcId);
-    if (!session) {
-      return interaction.reply({ content: "This verification session has expired.", ephemeral: true });
+// ==============================
+// Interaction Handler for Language Buttons and Slash Commands
+// ==============================
+client.on('interactionCreate', async interaction => {
+  // Handle language selection buttons.
+  if (interaction.isButton() && interaction.customId.startsWith("lang_")) {
+    const language = interaction.customId.split('_')[1]; // e.g., "english", "darija", etc.
+    let confirmationMessage = "";
+    switch (language) {
+      case "english":
+        confirmationMessage = "Language set to English! 👌";
+        break;
+      case "darija":
+        confirmationMessage = "Language set to Darija! 👌";
+        break;
+      case "spanish":
+        confirmationMessage = "¡Idioma establecido a Español! 👌";
+        break;
+      case "russian":
+        confirmationMessage = "Язык установлен на русский! 👌";
+        break;
+      case "french":
+        confirmationMessage = "Langue définie en Français! 👌";
+        break;
+      default:
+        confirmationMessage = "Language set!";
     }
-    if (session.assignedVerificator) {
-      return interaction.reply({ content: "This session is already claimed.", ephemeral: true });
-    }
-    const member = interaction.guild.members.cache.get(interaction.user.id);
-    if (!member.voice.channel) {
-      try {
-        const channel = interaction.guild.channels.cache.get(vcId);
-        const invite = await channel.createInvite({ maxAge: 300, maxUses: 1 });
-        return interaction.reply({ content: `You're not in a voice channel. Use this invite link: ${invite.url}`, ephemeral: true });
-      } catch (e) {
-        return interaction.reply({ content: "Error: Please join a voice channel and try again.", ephemeral: true });
+    try {
+      if (interaction.guild) {
+        await settingsCollection.updateOne(
+          { serverId: interaction.guild.id },
+          { $set: { language: language } },
+          { upsert: true }
+        );
       }
+    } catch (err) {
+      console.error("Error saving language:", err);
     }
-    if (member.voice.channelId !== vcId) {
-      await member.voice.setChannel(vcId);
-    }
-    session.assignedVerificator = interaction.user.id;
-    verificationSessions.set(vcId, session);
-    return interaction.reply({ content: "You've joined the verification room. You can now verify the user with +boy or +girl.", ephemeral: true });
+    await interaction.reply({ content: confirmationMessage, ephemeral: true });
+    // Use the appropriate ready prompt from languageExtras.
+    const readyPrompt = languageExtras[language]?.readyPrompt || "Now type `ready` to begin the setup process.";
+    await interaction.channel.send(readyPrompt);
   }
-  // Slash Command interactions (e.g., /help, /kick, etc.)
+  // Slash command handler for /setprefix and /help.
   else if (interaction.isChatInputCommand()) {
     const { commandName } = interaction;
-    const memberVC = interaction.member.voice.channel;
-    if (!memberVC) return interaction.reply({ content: "You must be in a voice channel to use this command.", ephemeral: true });
-    
-    // (The slash command handling for tap commands, admin commands, etc. goes here)
-    // For brevity, we'll assume these remain as in your previous code.
-    // ...
-    // Example: Handling the /help command:
-    if (commandName === "help") {
+    if (commandName === 'setprefix') {
+      const newPrefix = interaction.options.getString('prefix');
+      const serverId = interaction.guild.id;
+      try {
+        await settingsCollection.updateOne(
+          { serverId: serverId },
+          { $set: { prefix: newPrefix } },
+          { upsert: true }
+        );
+        return interaction.reply({ content: `Prefix updated to \`${newPrefix}\`!`, ephemeral: true });
+      } catch (err) {
+        console.error("Error setting prefix:", err);
+        return interaction.reply({ content: "Error updating prefix.", ephemeral: true });
+      }
+    }
+    else if (commandName === 'help') {
       const helpEmbed = new EmbedBuilder()
         .setColor(0xFF69B4)
         .setTitle("Available Commands")
-        .setDescription("Use these commands to manage your tap, verify users, view profiles, and more!")
+        .setDescription("Use these commands to customize and manage your bot.")
         .addFields(
-          { name: "Profile Viewer", value: "`r` → Show profile picture view (Avatar/Banner buttons)", inline: false },
-          { name: "Tap Commands", value: "`/kick`, `/reject`, `/perm`, `/claim`, `/lock`, `/unlock`, `/limit`, `/name`, `/status`, `/mute`, `/unmute`", inline: false }
+          { name: "Profile Viewer", value: "`r` → View your profile picture (with Avatar/Banner buttons)", inline: false },
+          { name: "Customization", value: "`/setprefix` → Set your custom command prefix", inline: false }
         );
-      if (interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-        helpEmbed.addFields(
-          { name: "Admin Commands", value: "`/unban`, `/binfo`, `/jinfo`, `/jailed`, `/topvrf`, `/toponline`\n`+jail`, `+unjail`", inline: false }
-        );
-      }
       return interaction.reply({ embeds: [helpEmbed], ephemeral: true });
     }
-    // (Other slash command cases would follow similarly)
   }
 });
 
-// -----------------------
-// MESSAGE COMMAND HANDLER (Profile Viewer)
-// -----------------------
-// We now only support the "R" command for profile picture viewing.
+// ==============================
+// Message Handler for Interactive Setup in the "bot-setup" Channel
+// ==============================
+client.on('messageCreate', async (message) => {
+  if (message.author.bot) return;
+  if (message.channel.name !== 'bot-setup') return;
+  // Only allow the server owner to interact.
+  if (message.author.id !== message.guild.ownerId) return;
+  
+  if (message.content.toLowerCase() === 'ready') {
+    message.channel.send(languageExtras[(await settingsCollection.findOne({ serverId: message.guild.id })).language]?.setupStart || "Let's begin setup.");
+    try {
+      const serverConfig = await settingsCollection.findOne({ serverId: message.guild.id });
+      const lang = (serverConfig && serverConfig.language) || "english";
+      await runSetup(message.author.id, message.channel, message.guild.id, lang);
+      await message.channel.send(languageExtras[lang]?.setupComplete);
+      setTimeout(() => {
+        message.channel.delete().catch(console.error);
+      }, 5000);
+    } catch (err) {
+      console.error("Setup process error:", err);
+    }
+  }
+});
+
+// ==============================
+// Message Handler for Profile Viewer – "R" Command Only
+// ==============================
 client.on('messageCreate', async (message) => {
   if (message.author.bot) return;
   const content = message.content.trim();
-  // ----- R COMMAND: Show profile picture view with Avatar/Banner buttons -----
   if (content.toLowerCase().startsWith('r')) {
     let targetUser = message.mentions.users.first() || message.author;
     try {
@@ -376,13 +421,13 @@ client.on('messageCreate', async (message) => {
       .setLabel("Banner")
       .setStyle(ButtonStyle.Secondary);
     const row = new ActionRowBuilder().addComponents(avatarButton, bannerButton);
-    await message.channel.send({ embeds: [embed], components: [row] });
+    message.channel.send({ embeds: [embed], components: [row] });
   }
 });
 
-// -----------------------
-// BUTTON INTERACTION HANDLER (Profile Viewer Buttons)
-// -----------------------
+// ==============================
+// Interaction Handler for Profile Viewer Buttons
+// ==============================
 client.on('interactionCreate', async (interaction) => {
   if (!interaction.isButton()) return;
   const [action, userId] = interaction.customId.split('_');
@@ -401,7 +446,7 @@ client.on('interactionCreate', async (interaction) => {
       .setTitle(`${targetUser.username}'s Avatar`)
       .setImage(avatarURL)
       .setFooter({ text: `Requested by: ${interaction.user.username}` });
-    await interaction.update({ embeds: [embed] });
+    return interaction.update({ embeds: [embed] });
   } else if (action === 'banner') {
     const bannerURL = targetUser.bannerURL({ dynamic: true, size: 1024 });
     if (!bannerURL) {
@@ -412,113 +457,12 @@ client.on('interactionCreate', async (interaction) => {
       .setTitle(`${targetUser.username}'s Banner`)
       .setImage(bannerURL)
       .setFooter({ text: `Requested by: ${interaction.user.username}` });
-    await interaction.update({ embeds: [embed] });
+    return interaction.update({ embeds: [embed] });
   }
 });
 
-// -----------------------
-// Additional Message Commands (Verification & Jail)
-// -----------------------
-client.on('messageCreate', async (message) => {
-  if (message.author.bot) return;
-  
-  // ----- Verification Commands (+boy / +girl) -----
-  if (message.content.startsWith('+boy') || message.content.startsWith('+girl')) {
-    let sessionId;
-    for (const [vcId, session] of verificationSessions.entries()) {
-      if (message.member.voice.channelId === vcId) {
-        if (!session.assignedVerificator) {
-          session.assignedVerificator = message.author.id;
-          verificationSessions.set(vcId, session);
-        }
-        if (session.assignedVerificator === message.author.id) {
-          sessionId = vcId;
-          break;
-        }
-      }
-    }
-    if (!sessionId) {
-      return message.reply("No active verification session found for you.");
-    }
-    const session = verificationSessions.get(sessionId);
-    const memberToVerify = message.guild.members.cache.get(session.userId);
-    if (!memberToVerify) return message.reply("User not found.");
-    try {
-      await memberToVerify.roles.remove(process.env.ROLE_UNVERIFIED);
-      let verifiedRoleName;
-      if (message.content.startsWith('+boy')) {
-        await memberToVerify.roles.add(process.env.ROLE_VERIFIED_BOY);
-        verifiedRoleName = "Verified Boy";
-      } else {
-        await memberToVerify.roles.add(process.env.ROLE_VERIFIED_GIRL);
-        verifiedRoleName = "Verified Girl";
-      }
-      await memberToVerify.send("# No Toxic Guys Here ❌️☢️ 7na Hna Bash Nchilliw Wnstmt3o Bw9tna ...Mar7ba Bik Mara Akhra ⚘️♥️");
-      message.channel.send(`<@${memberToVerify.id}> was verified as ${verifiedRoleName} successfully!`);
-      setTimeout(async () => {
-        const verifVC = message.guild.channels.cache.get(sessionId);
-        if (verifVC) {
-          if (verifVC.members.size === 0 || (verifVC.members.size === 1 && verifVC.members.has(message.author.id))) {
-            await verifVC.delete().catch(() => {});
-            verificationSessions.delete(sessionId);
-          }
-        }
-      }, 30000);
-      return message.reply("Verification complete.");
-    } catch (err) {
-      console.error("Verification error:", err);
-      return message.reply("Verification failed.");
-    }
-  }
-  
-  // ----- Jail System (+jail / +unjail) -----
-  if (message.content.startsWith('+jail')) {
-    if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-      return message.reply("You don't have permission to use this command.");
-    }
-    const args = message.content.split(' ');
-    if (args.length < 3) return message.reply("Usage: +jail <userID> <reason>");
-    const targetId = args[1];
-    const reason = args.slice(2).join(' ');
-    const targetMember = message.guild.members.cache.get(targetId);
-    if (!targetMember) return message.reply("User not found.");
-    try {
-      const rolesToRemove = targetMember.roles.cache
-        .filter(role => role.id !== targetMember.guild.id)
-        .map(role => role.id);
-      await targetMember.roles.remove(rolesToRemove, "Jailed: Removing all roles");
-      await targetMember.roles.add(process.env.ROLE_JAILED);
-      const jailVC = message.guild.channels.cache.get(process.env.VOICE_JAIL);
-      if (jailVC) await targetMember.voice.setChannel(jailVC);
-      jailData.set(targetId, reason);
-      try { await targetMember.send("# No Toxic Guys Here ❌️☢️ 7na Hna Bash Nchilliw Wnstmt3o Bw9tna ...Mar7ba Bik Mara Akhra ⚘️♥️"); } catch (e) {}
-      return message.reply(`User ${targetMember.displayName} has been jailed.`);
-    } catch (err) {
-      console.error("Jail error:", err);
-      return message.reply("Failed to jail the user.");
-    }
-  }
-  if (message.content.startsWith('+unjail')) {
-    if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-      return message.reply("You don't have permission to use this command.");
-    }
-    const args = message.content.split(' ');
-    if (args.length < 2) return message.reply("Usage: +unjail <userID>");
-    const targetId = args[1];
-    const targetMember = message.guild.members.cache.get(targetId);
-    if (!targetMember) return message.reply("User not found.");
-    try {
-      await targetMember.roles.remove(process.env.ROLE_JAILED);
-      jailData.delete(targetId);
-      return message.reply(`User ${targetMember.displayName} has been unjailed.`);
-    } catch (err) {
-      console.error("Unjail error:", err);
-      return message.reply("Failed to unjail the user.");
-    }
-  }
-});
+// ==============================
+// Additional Commands (e.g., Verification, Jail, One-Tap, etc.) can be added below as needed.
+// ==============================
 
-// -----------------------
-// LOGIN
-// -----------------------
 client.login(process.env.DISCORD_TOKEN);

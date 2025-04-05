@@ -2,15 +2,14 @@
 // Franco's Armada Bot – A fully featured rental bot with interactive, multilingual per‑server setup.
 // FEATURES:
 // • Connects to MongoDB to store per‑server settings (language, custom prefix, role/channel IDs, custom welcome message).
-// • When joining a server, creates a temporary "bot-setup" channel with language buttons for interactive setup.
-// • Assigns new members the unverified role and DMs them a welcome message (customizable per server).
+// • When joining a server, creates a temporary "bot-setup" channel with language selection buttons for interactive setup.
+// • Assigns new members the unverified role and DMs them a welcome message (using a custom welcome if set).
 // • Creates a permanent "bot-config" channel for later configuration (e.g. updating prefix or welcome message).
-// • Implements voice state handling for verification (temporary verification VC creation with a pop-up alert) and a fixed one-tap channel.
-// • Provides slash commands for customization (/setprefix, /setwelcome, /showwelcome),
-//   one-tap management (/claim, /reject, /kick, /mute, /unmute, /transfer, /name, /status),
-//   and dashboard commands (/toponline, /topmembers, /topvrf, /binfo, /jinfo) with appropriate permission checks.
-// • Provides an "R" command for profile viewing.
-// (Ensure your environment variables include DISCORD_TOKEN, MONGODB_URI, CLIENT_ID, GUILD_ID, etc.)
+// • Implements voice state handling for verification (temporary VC creation with a pop-up alert) and a fixed one‑tap channel.
+// • Provides slash commands for customization (/setprefix, /setwelcome, /showwelcome), one‑tap management,
+//   dashboard commands (/toponline, /topmembers, /topvrf, /binfo, /jinfo) with proper permissions,
+//   and an "R" command for profile viewing.
+// (Ensure your .env includes DISCORD_TOKEN, MONGODB_URI, CLIENT_ID, GUILD_ID, etc.)
 
 require('dotenv').config();
 const {
@@ -67,7 +66,7 @@ const client = new Client({
 // ------------------------------
 // Prevent Setup Duplication
 // ------------------------------
-const setupStarted = new Map(); // Prevents multiple "ready" triggers per guild
+const setupStarted = new Map(); // Prevent multiple "ready" triggers per guild
 
 // ------------------------------
 // GuildMemberAdd: Assign Unverified Role & DM Welcome Message
@@ -75,7 +74,7 @@ const setupStarted = new Map(); // Prevents multiple "ready" triggers per guild
 client.on(Events.GuildMemberAdd, async member => {
   try {
     const config = await settingsCollection.findOne({ serverId: member.guild.id });
-    // Use custom welcome if set, otherwise default.
+    // Use custom welcome if set, else default message.
     const welcomeMsg = (config && config.customWelcome) ? config.customWelcome :
       "Merhba Bik Fi A7sen Server Fl Maghrib! Daba ayji 3ndk Verificator bash yverifik 😊";
     if (config && config.unverifiedRoleId) {
@@ -238,7 +237,7 @@ async function runSetup(ownerId, setupChannel, guildId, lang) {
 }
 
 // ------------------------------
-// Slash Commands Setup (including new /setwelcome and /showwelcome, plus dashboard commands)
+// Slash Commands Setup (including /setprefix, /setwelcome, /showwelcome, dashboard, one-tap, etc.)
 // ------------------------------
 client.commands = new Collection();
 const slashCommands = [
@@ -257,12 +256,10 @@ const slashCommands = [
     .setDescription('Show the current custom welcome message'),
 
   // Dashboard Commands:
-  // /topvrf – only for admins, owner, and verificators.
   new SlashCommandBuilder()
     .setName('topvrf')
     .setDescription('Show top verificators')
-    .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator), // We'll check further in code.
-  // /binfo & /jinfo – only for admins.
+    .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator), // Additional check in code.
   new SlashCommandBuilder()
     .setName('binfo')
     .setDescription('Show total bans')
@@ -272,15 +269,14 @@ const slashCommands = [
     .setDescription('Show jail info for a user')
     .addStringOption(option => option.setName('userid').setDescription('User ID').setRequired(true))
     .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
-  // /toponline and /topmembers – for verified (either verifiedRole or verifiedGirl) plus admins and owner.
   new SlashCommandBuilder()
     .setName('toponline')
     .setDescription('Show most online users'),
   new SlashCommandBuilder()
     .setName('topmembers')
     .setDescription('Show top members by activity'),
-  
-  // Other one-tap commands and help:
+
+  // One-tap commands and help:
   new SlashCommandBuilder().setName('claim').setDescription('Claim ownership of your tap'),
   new SlashCommandBuilder().setName('reject').setDescription('Reject a user from joining your tap')
     .addUserOption(option => option.setName('target').setDescription('User to reject').setRequired(true)),
@@ -320,9 +316,8 @@ const slashCommands = [
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
   const { commandName } = interaction;
-  // Fetch config if needed.
   const config = await settingsCollection.findOne({ serverId: interaction.guild.id });
-  // Utility permission checks:
+  // Utility checks:
   const isAdmin = interaction.member.permissions.has(PermissionsBitField.Flags.Administrator);
   const isOwner = interaction.member.id === interaction.guild.ownerId;
   const hasVerified = config && (interaction.member.roles.cache.has(config.verifiedRoleId) || interaction.member.roles.cache.has(config.verifiedGirlRoleId));
@@ -359,14 +354,11 @@ client.on('interactionCreate', async interaction => {
       return interaction.reply({ content: "Failed to fetch welcome message.", ephemeral: true });
     }
   } else if (commandName === 'topvrf') {
-    // Allowed for admin, owner, or verificators.
     if (!isAdmin && !isOwner && !hasVerificator) {
       return interaction.reply({ content: "You do not have permission to use this command.", ephemeral: true });
     }
-    // (Placeholder response)
     return interaction.reply({ content: "Top verificators: [Feature coming soon...]", ephemeral: true });
   } else if (commandName === 'binfo' || commandName === 'jinfo') {
-    // Only admins can use these.
     if (!isAdmin) {
       return interaction.reply({ content: "Only administrators can use this command.", ephemeral: true });
     }
@@ -378,25 +370,22 @@ client.on('interactionCreate', async interaction => {
         console.error(e);
         return interaction.reply({ content: "Failed to fetch ban info.", ephemeral: true });
       }
-    } else { // jinfo
+    } else {
       const userId = interaction.options.getString('userid');
       return interaction.reply({ content: `Jail info for user ${userId}: [Feature coming soon...]`, ephemeral: true });
     }
   } else if (commandName === 'toponline' || commandName === 'topmembers') {
-    // Allowed for verified members, admins, or owner.
     if (!isAdmin && !isOwner && !hasVerified) {
       return interaction.reply({ content: "You do not have permission to use this command.", ephemeral: true });
     }
-    // (Placeholder responses)
     if (commandName === 'toponline') {
       return interaction.reply({ content: "Top online users: [Feature coming soon...]", ephemeral: true });
     } else {
       return interaction.reply({ content: "Top members: [Feature coming soon...]", ephemeral: true });
     }
   }
-  // One-tap commands & other commands would be handled below.
+  // One-tap commands:
   else if (commandName === 'claim') {
-    // (Assume similar handling as before; no extra permission checks here.)
     const member = interaction.member;
     const vc = member.voice.channel;
     if (!vc || !onetapSessions.has(vc.id)) {
@@ -483,7 +472,7 @@ client.on('interactionCreate', async interaction => {
     }
     session.owner = target.id;
     onetapSessions.set(vc.id, session);
-    return interaction.reply({ content: `Ownership has been transferred to ${target.username}.`, ephemeral: true });
+    return interaction.reply({ content: `Ownership transferred to ${target.username}.`, ephemeral: true });
   }
   else if (commandName === 'name') {
     const newName = interaction.options.getString('text');
@@ -542,7 +531,7 @@ client.on('interactionCreate', async interaction => {
 // Create Permanent "bot-config" Channel on Guild Join
 // ------------------------------
 client.on(Events.GuildCreate, async guild => {
-  // Create the temporary setup channel.
+  // Create temporary setup channel.
   let setupChannel;
   try {
     setupChannel = await guild.channels.create({
@@ -558,7 +547,7 @@ client.on(Events.GuildCreate, async guild => {
     console.error("Failed to create setup channel:", error);
     return;
   }
-  // Create a permanent "bot-config" channel for later configuration.
+  // Create permanent "bot-config" channel for later configuration.
   try {
     await guild.channels.create({
       name: 'bot-config',
@@ -567,14 +556,14 @@ client.on(Events.GuildCreate, async guild => {
       permissionOverwrites: [
         { id: guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
         { id: guild.ownerId, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] }
-        // Optionally add permissions for an admin role if desired.
+        // Optionally allow a designated admin role.
       ]
     });
     console.log("Created bot-config channel for", guild.name);
   } catch (error) {
     console.error("Failed to create bot-config channel:", error);
   }
-  // Send the welcome embed in the setup channel.
+  // Send welcome embed in setup channel.
   const englishButton = new ButtonBuilder().setCustomId('lang_english').setLabel('English').setStyle(ButtonStyle.Primary);
   const darijaButton = new ButtonBuilder().setCustomId('lang_darija').setLabel('Darija').setStyle(ButtonStyle.Primary);
   const spanishButton = new ButtonBuilder().setCustomId('lang_spanish').setLabel('Spanish').setStyle(ButtonStyle.Primary);
@@ -613,7 +602,7 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
   const guild = newState.guild || oldState.guild;
   const config = await settingsCollection.findOne({ serverId: guild.id });
   
-  // Verification System: When a member joins the designated verification voice channel.
+  // Verification System:
   if (config && newState.channelId === config.voiceVerificationChannelId) {
     try {
       const member = newState.member;
@@ -647,13 +636,12 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
     }
   }
   
-  // One-Tap System: When a member joins the designated one-tap channel.
+  // One-Tap System:
   if (config && newState.channelId === config.oneTapChannelId) {
     try {
       const member = newState.member;
       console.log(`${member.displayName} joined the fixed one-tap channel.`);
-      // Optionally, you can move them to a fixed channel if desired.
-      // await member.voice.setChannel(process.env.FIXED_ONE_TAP_CHANNEL);
+      // Optionally, move them to a fixed channel if desired.
     } catch (err) {
       console.error("Error handling one-tap join:", err);
     }
@@ -760,18 +748,20 @@ client.on('messageCreate', async (message) => {
 });
 
 // ------------------------------
-// "R" Command for Profile Viewer
+// "R" Command for Profile Viewer (Fixed)
 // ------------------------------
 client.on('messageCreate', async (message) => {
   if (message.author.bot) return;
   const content = message.content.trim().toLowerCase();
+  // Trigger when message is exactly "r" or starts with "r " but not "ready"
   if ((content === 'r' || content.startsWith('r ')) && content !== 'ready') {
+    // Use mention if available; otherwise default to author.
     let targetUser = message.mentions.users.first() || message.author;
     try {
       targetUser = await targetUser.fetch();
     } catch (err) {
       console.error("Error fetching user data:", err);
-      return message.reply("Error fetching user data.");
+      return message.reply("Error fetching user data. Please mention a valid user or type just 'r'.");
     }
     const embed = new EmbedBuilder()
       .setColor(0x0099ff)

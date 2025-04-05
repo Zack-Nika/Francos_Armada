@@ -66,7 +66,13 @@ const client = new Client({
 });
 
 // ------------------------------
-// Language Translations for Setup Prompts (IDs)
+// Prevent Setup Duplication
+// ------------------------------
+// This Map tracks which guilds have already started setup
+const setupStarted = new Map();
+
+// ------------------------------
+// Language Translations for Setup Prompts (for required IDs)
 // (For Darija, role/channel names remain in English.)
 const languagePrompts = {
   english: {
@@ -387,6 +393,12 @@ client.on('messageCreate', async (message) => {
   if (message.author.id !== message.guild.ownerId) return;
   
   if (message.content.toLowerCase() === 'ready') {
+    // Check if setup already started for this guild
+    if (setupStarted.get(message.guild.id)) {
+      return; // Ignore duplicate "ready" messages.
+    }
+    setupStarted.set(message.guild.id, true);
+    
     const serverConfig = await settingsCollection.findOne({ serverId: message.guild.id });
     const lang = (serverConfig && serverConfig.language) || "english";
     await message.channel.send(languageExtras[lang]?.setupStart);

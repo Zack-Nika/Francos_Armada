@@ -296,7 +296,6 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
       console.log(`Created verification VC: ${tempVC.name} for ${member.displayName}`);
       await member.voice.setChannel(tempVC);
       verificationSessions.set(tempVC.id, { userId: member.id, assignedVerificator: null, rejected: false });
-      // Send a pop-up message in the alert channel.
       const alertChannel = guild.channels.cache.get(process.env.CHANNEL_VERIFICATION_ALERT);
       if (alertChannel) {
         const joinButton = new ButtonBuilder()
@@ -394,15 +393,12 @@ client.on(Events.GuildCreate, async guild => {
     console.error("Failed to create setup channel:", error);
     return;
   }
-
-  // Create language selection buttons.
   const englishButton = new ButtonBuilder().setCustomId('lang_english').setLabel('English').setStyle(ButtonStyle.Primary);
   const darijaButton = new ButtonBuilder().setCustomId('lang_darija').setLabel('Darija').setStyle(ButtonStyle.Primary);
   const spanishButton = new ButtonBuilder().setCustomId('lang_spanish').setLabel('Spanish').setStyle(ButtonStyle.Primary);
   const russianButton = new ButtonBuilder().setCustomId('lang_russian').setLabel('Russian').setStyle(ButtonStyle.Primary);
   const frenchButton = new ButtonBuilder().setCustomId('lang_french').setLabel('French').setStyle(ButtonStyle.Primary);
   const row = new ActionRowBuilder().addComponents(englishButton, darijaButton, spanishButton, russianButton, frenchButton);
-
   const embed = new EmbedBuilder()
     .setColor(0x00AE86)
     .setTitle("Welcome to Franco's Armada! 🔱🚢")
@@ -429,7 +425,6 @@ client.on(Events.GuildCreate, async guild => {
 // Interaction Handler for Language Buttons and Slash Commands
 // ==============================
 client.on('interactionCreate', async interaction => {
-  // Handle language selection buttons.
   if (interaction.isButton() && interaction.customId.startsWith("lang_")) {
     const language = interaction.customId.split('_')[1];
     let confirmationMessage = "";
@@ -466,9 +461,7 @@ client.on('interactionCreate', async interaction => {
     await interaction.reply({ content: confirmationMessage, ephemeral: true });
     const readyPrompt = languageExtras[language]?.readyPrompt || "Now type `ready` to begin the setup process.";
     await interaction.channel.send(readyPrompt);
-  }
-  // Slash command handler.
-  else if (interaction.isChatInputCommand()) {
+  } else if (interaction.isChatInputCommand()) {
     const { commandName } = interaction;
     if (commandName === 'setprefix') {
       const newPrefix = interaction.options.getString('prefix');
@@ -484,8 +477,7 @@ client.on('interactionCreate', async interaction => {
         console.error("Error setting prefix:", err);
         return interaction.reply({ content: "Error updating prefix.", ephemeral: true });
       }
-    }
-    else if (commandName === 'help') {
+    } else if (commandName === 'help') {
       const helpEmbed = new EmbedBuilder()
         .setColor(0xFF69B4)
         .setTitle("Available Commands")
@@ -675,13 +667,11 @@ client.on('messageCreate', async (message) => {
 
 // ==============================
 // Message Handler for Profile Viewer – "R" Command Only
-// (Modified so that it triggers only if the message is exactly "r" or "r " followed by a mention)
-// ==============================
+// (Triggers only if the message is exactly "r" or "r " followed by a mention, but not "ready")
+/* Note: We compare the lowercased message content exactly */
 client.on('messageCreate', async (message) => {
   if (message.author.bot) return;
   const content = message.content.trim().toLowerCase();
-  
-  // Check if the message is exactly "r" or starts with "r " (and is not "ready")
   if ((content === 'r' || content.startsWith('r ')) && content !== 'ready') {
     let targetUser = message.mentions.users.first() || message.author;
     try {

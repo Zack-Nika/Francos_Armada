@@ -11,7 +11,7 @@
 //   as well as admin commands (/toponline, /topvrf, /binfo, /jinfo).
 // • Provides a "R" message command to view a user's profile picture (with Avatar/Banner buttons).
 //
-// (Make sure your environment variables include DISCORD_TOKEN, MONGODB_URI, and any IDs needed for voice channels/roles.)
+// (Ensure your environment variables include DISCORD_TOKEN, MONGODB_URI, and any required IDs.)
 
 require('dotenv').config();
 const {
@@ -66,59 +66,59 @@ const client = new Client({
 // (For Darija, role/channel names remain in English.)
 const languagePrompts = {
   english: {
-    verifiedRoleId: "🔹 **Please provide the Verified Role ID** (the role assigned to verified members).",
-    unverifiedRoleId: "🔹 **Now, provide the Unverified Role ID** (the role for new/unverified members).",
-    verifiedGirlRoleId: "🔹 **Next, please provide the Verified Girl Role ID**.",
-    verificatorRoleId: "🔹 **Please provide the Verificator Role ID** (the role for those who verify new users).",
-    voiceVerificationChannelId: "🔹 **Send the Voice Verification Channel ID** (where new users join for verification).",
-    oneTapChannelId: "🔹 **Now, send the One-Tap Channel ID** (for creating one-tap voice channels).",
-    verificationAlertChannelId: "🔹 **Send the Verification Alert Channel ID** (where verification alerts are posted).",
-    jailRoleId: "🔹 **Provide the Jail Role ID** (for jailed users). If not applicable, type `none`.",
-    voiceJailChannelId: "🔹 **Finally, send the Voice Jail Channel ID** (for jailed users). If not applicable, type `none`."
+    verifiedRoleId: "🔹 **# Please provide the Verified Role ID** (the role assigned to verified members).",
+    unverifiedRoleId: "🔹 **# Now, provide the Unverified Role ID** (the role for new/unverified members).",
+    verifiedGirlRoleId: "🔹 **# Next, please provide the Verified Girl Role ID**.",
+    verificatorRoleId: "🔹 **# Please provide the Verificator Role ID** (the role for those who verify new users).",
+    voiceVerificationChannelId: "🔹 **# Send the Voice Verification Channel ID** (where new users join for verification).",
+    oneTapChannelId: "🔹 **# Now, send the One-Tap Channel ID** (for creating one-tap voice channels).",
+    verificationAlertChannelId: "🔹 **# Send the Verification Alert Channel ID** (where verification alerts are posted).",
+    jailRoleId: "🔹 **# Provide the Jail Role ID** (for jailed users). If not applicable, type `none`.",
+    voiceJailChannelId: "🔹 **# Finally, send the Voice Jail Channel ID** (for jailed users). If not applicable, type `none`."
   },
   darija: {
-    verifiedRoleId: "🔹 **3tini l'ID dyal Verified Role** (role li kat3ti l'users verified).",
-    unverifiedRoleId: "🔹 **3tini l'ID dyal Unverified Role** (role dyal new/unverified users).",
-    verifiedGirlRoleId: "🔹 **3tini l'ID dyal Verified Girl Role**.",
-    verificatorRoleId: "🔹 **3tini l'ID dyal Verificator Role**.",
-    voiceVerificationChannelId: "🔹 **3tini l'ID dyal Voice Verification Channel** (fin kaydkhlu l'users jdod).",
-    oneTapChannelId: "🔹 **3tini l'ID dyal One-Tap Channel** (bash ytkawn private voice rooms).",
-    verificationAlertChannelId: "🔹 **3tini l'ID dyal Verification Alert Channel**.",
-    jailRoleId: "🔹 **3tini l'ID dyal Jail Role** (ila ma kaynach, ktb `none`).",
-    voiceJailChannelId: "🔹 **3tini l'ID dyal Voice Jail Channel** (ila ma kaynach, ktb `none`)."
+    verifiedRoleId: "🔹 **# 3afak 3tini l'ID dyal Verified Role** (Role li kayt3ti l'users verified).",
+    unverifiedRoleId: "🔹 **# Daba 3tini l'ID dyal Unverified Role** (role dyal new/unverified users).",
+    verifiedGirlRoleId: "🔹 **# 3tini l'ID dyal Verified Girl Role**.",
+    verificatorRoleId: "🔹 **# Wdaba 3tini l'ID dyal Verificator Role**.",
+    voiceVerificationChannelId: "🔹 **# 3tini l'ID dyal Voice Verification Channel** (fin kaydkhlu l'users jdod).",
+    oneTapChannelId: "🔹 **# 3tini l'ID dyal One-Tap Channel** (bash tkon private voice rooms).",
+    verificationAlertChannelId: "🔹 **# 3tini l'ID dyal Verification Alert Channel**.",
+    jailRoleId: "🔹 **# 3tini l'ID dyal Jail Role** (ila ma kaynach, ktb `none`).",
+    voiceJailChannelId: "🔹 **# 3tini l'ID dyal Voice Jail Channel** (ila ma kaynach, ktb `none`)."
   },
   spanish: {
-    verifiedRoleId: "🔹 **Por favor, proporciona el ID del Rol Verificado** (el rol asignado a los miembros verificados).",
-    unverifiedRoleId: "🔹 **Ahora, proporciona el ID del Rol No Verificado** (el rol para nuevos miembros).",
-    verifiedGirlRoleId: "🔹 **A continuación, proporciona el ID del Rol de Verificadas**.",
-    verificatorRoleId: "🔹 **Por favor, proporciona el ID del Rol de Verificadores** (rol para quienes verifican nuevos usuarios).",
-    voiceVerificationChannelId: "🔹 **Envía el ID del Canal de Verificación de Voz** (donde los nuevos usuarios se unen para la verificación).",
-    oneTapChannelId: "🔹 **Ahora, envía el ID del Canal One-Tap** (para la creación de canales de voz privados).",
-    verificationAlertChannelId: "🔹 **Envía el ID del Canal de Alertas de Verificación** (donde se publican las alertas de verificación).",
-    jailRoleId: "🔹 **Proporciona el ID del Rol de Cárcel** (para usuarios en cárcel). Si no aplica, escribe `none`.",
-    voiceJailChannelId: "🔹 **Finalmente, envía el ID del Canal de Voz para Cárcel**. Si no aplica, escribe `none`."
+    verifiedRoleId: "🔹 **# Por favor, proporciona el ID del Rol Verificado** (el rol asignado a los miembros verificados).",
+    unverifiedRoleId: "🔹 **# Ahora, proporciona el ID del Rol No Verificado** (el rol para nuevos miembros).",
+    verifiedGirlRoleId: "🔹 **# A continuación, proporciona el ID del Rol de Verificadas**.",
+    verificatorRoleId: "🔹 **# Por favor, proporciona el ID del Rol de Verificadores** (rol para quienes verifican nuevos usuarios).",
+    voiceVerificationChannelId: "🔹 **# Envía el ID del Canal de Verificación de Voz** (donde los nuevos usuarios se unen para la verificación).",
+    oneTapChannelId: "🔹 **# Ahora, envía el ID del Canal One-Tap** (para la creación de canales de voz privados).",
+    verificationAlertChannelId: "🔹 **# Envía el ID del Canal de Alertas de Verificación** (donde se publican las alertas de verificación).",
+    jailRoleId: "🔹 **# Proporciona el ID del Rol de Cárcel** (para usuarios en cárcel). Si no aplica, escribe `none`.",
+    voiceJailChannelId: "🔹 **# Finalmente, envía el ID del Canal de Voz para Cárcel**. Si no aplica, escribe `none`."
   },
   russian: {
-    verifiedRoleId: "🔹 **Пожалуйста, предоставьте ID роли для Verified Role** (роль, назначаемая проверенным участникам).",
-    unverifiedRoleId: "🔹 **Теперь предоставьте ID роли для Unverified Role** (роль для новых участников).",
-    verifiedGirlRoleId: "🔹 **Далее, предоставьте ID роли для Verified Girl Role**.",
-    verificatorRoleId: "🔹 **Пожалуйста, предоставьте ID роли для Verificator Role** (роль для тех, кто проверяет новых пользователей).",
-    voiceVerificationChannelId: "🔹 **Отправьте ID голосового канала для Voice Verification Channel** (где новые пользователи присоединяются для проверки).",
-    oneTapChannelId: "🔹 **Теперь отправьте ID канала One-Tap Channel** (для создания приватных голосовых каналов).",
-    verificationAlertChannelId: "🔹 **Отправьте ID текстового канала для Verification Alert Channel**.",
-    jailRoleId: "🔹 **Предоставьте ID роли для Jail Role** (если не применимо, введите `none`).",
-    voiceJailChannelId: "🔹 **Наконец, отправьте ID голосового канала для Voice Jail Channel** (если не применимо, введите `none`)."
+    verifiedRoleId: "🔹 **# Пожалуйста, предоставьте ID роли для Verified Role** (роль, назначаемая проверенным участникам).",
+    unverifiedRoleId: "🔹 **# Теперь предоставьте ID роли для Unverified Role** (роль для новых участников).",
+    verifiedGirlRoleId: "🔹 **# Далее, предоставьте ID роли для Verified Girl Role**.",
+    verificatorRoleId: "🔹 **# Пожалуйста, предоставьте ID роли для Verificator Role** (роль для тех, кто проверяет новых пользователей).",
+    voiceVerificationChannelId: "🔹 **# Отправьте ID голосового канала для Voice Verification Channel** (где новые пользователи присоединяются для проверки).",
+    oneTapChannelId: "🔹 **# Теперь отправьте ID канала One-Tap Channel** (для создания приватных голосовых каналов).",
+    verificationAlertChannelId: "🔹 **# Отправьте ID текстового канала для Verification Alert Channel**.",
+    jailRoleId: "🔹 **# Предоставьте ID роли для Jail Role** (если не применимо, введите `none`).",
+    voiceJailChannelId: "🔹 **# Наконец, отправьте ID голосового канала для Voice Jail Channel** (если не применимо, введите `none`)."
   },
   french: {
-    verifiedRoleId: "🔹 **Veuillez fournir l'ID du rôle Verified Role** (le rôle attribué aux membres vérifiés).",
-    unverifiedRoleId: "🔹 **Maintenant, fournissez l'ID du rôle Unverified Role** (le rôle pour les nouveaux membres).",
-    verifiedGirlRoleId: "🔹 **Ensuite, veuillez fournir l'ID du rôle Verified Girl Role**.",
-    verificatorRoleId: "🔹 **Veuillez fournir l'ID du rôle Verificator Role** (le rôle pour ceux qui vérifient les nouveaux utilisateurs).",
-    voiceVerificationChannelId: "🔹 **Envoyez l'ID du canal vocal pour Voice Verification Channel** (là où les nouveaux utilisateurs se joignent pour être vérifiés).",
-    oneTapChannelId: "🔹 **Maintenant, envoyez l'ID du canal One-Tap Channel** (pour la création de canaux vocaux privés).",
-    verificationAlertChannelId: "🔹 **Envoyez l'ID du canal textuel pour Verification Alert Channel**.",
-    jailRoleId: "🔹 **Fournissez l'ID du rôle pour Jail Role** (si non applicable, tapez `none`).",
-    voiceJailChannelId: "🔹 **Enfin, envoyez l'ID du canal vocal pour Voice Jail Channel** (si non applicable, tapez `none`)."
+    verifiedRoleId: "🔹 **# Veuillez fournir l'ID du rôle Verified Role** (le rôle attribué aux membres vérifiés).",
+    unverifiedRoleId: "🔹 **# Maintenant, fournissez l'ID du rôle Unverified Role** (le rôle pour les nouveaux membres).",
+    verifiedGirlRoleId: "🔹 **# Ensuite, veuillez fournir l'ID du rôle Verified Girl Role**.",
+    verificatorRoleId: "🔹 **# Veuillez fournir l'ID du rôle Verificator Role** (le rôle pour ceux qui vérifient les nouveaux utilisateurs).",
+    voiceVerificationChannelId: "🔹 **# Envoyez l'ID du canal vocal pour Voice Verification Channel** (là où les nouveaux utilisateurs se joignent pour être vérifiés).",
+    oneTapChannelId: "🔹 **# Maintenant, envoyez l'ID du canal One-Tap Channel** (pour la création de canaux vocaux privés).",
+    verificationAlertChannelId: "🔹 **# Envoyez l'ID du canal textuel pour Verification Alert Channel**.",
+    jailRoleId: "🔹 **# Fournissez l'ID du rôle pour Jail Role** (si non applicable, tapez `none`).",
+    voiceJailChannelId: "🔹 **# Enfin, envoyez l'ID du canal vocal pour Voice Jail Channel** (si non applicable, tapez `none`)."
   }
 };
 
@@ -130,31 +130,31 @@ const languageExtras = {
     readyPrompt: "Great! Now type `ready` in this channel to begin the setup process. (You have 90 seconds per prompt.)",
     setupStart: "Alright, let's begin the setup process. I will ask you for a series of IDs. Please copy and paste each one as prompted.",
     setupComplete: "Thank you for your patience! Your bot is now fully set up. 🎉",
-    intro: "Hello! I am Franco's Armada – your versatile server management bot. I can help with verification, one-tap voice channels, moderation, and more. Made by Franco (YOUR_USER_ID_HERE). Let's set sail together! ⚓"
+    intro: "Hello! I am Franco's Armada 🔱 – your versatile server management bot. I can help with verification, one-tap voice channels, moderation, and more. Made by Franco 🔱. Let's set sail together! ⚓"
   },
   darija: {
-    readyPrompt: "Mzyan! Daba kteb `ready` f had channel bach nbda setup. (3andak 90 tsania f kol prompt.)",
-    setupStart: "Yallah, bda nsetup. Ghadi nsawlouk 3la b3d IDs. 3afak copy w paste kol wa7ed mlli yb9a talab.",
+    readyPrompt: "Mzyan! Daba kteb `ready` f had channel bach nbda setup. (3andak 90 seconds f kol prompt.)",
+    setupStart: "Yallah, daba ghanbda setup. Ghadi nsewlek 3la b3d IDs. 3afak copier w coller kol wahed wsifto lia.",
     setupComplete: "Choukrane 3la sbr dyalk! L'bot dyalk daba msetab kaml. 🎉",
-    intro: "Salam! Ana Franco's Armada – l'bot dyalk li kaymsah lik l'server b style. Kay3awn f verification, one-tap, modération w ktar. Made by Franco (YOUR_USER_ID_HERE). Yallah, nbdaw l'mission! ⚓"
+    intro: "Salam! Ana Franco's Armada 🔱 – l'bot dyalk li kayt3awn m3ak f server b style. Kay3awn f verification, one-tap, modération w ktar. Made by Franco 🔱. Yallah, nbdaw l'mission! ⚓"
   },
   spanish: {
-    readyPrompt: "¡Genial! Ahora escribe `ready` en este canal para comenzar el proceso de configuración. (Tienes 90 segundos por mensaje.)",
+    readyPrompt: "Genial! Ahora escribe `ready` en este canal para comenzar el proceso de configuración. (Tienes 90 segundos por mensaje.)",
     setupStart: "Muy bien, vamos a comenzar el proceso de configuración. Te pediré una serie de IDs. Por favor, copia y pega cada uno cuando se te pida.",
     setupComplete: "¡Gracias por tu paciencia! Tu bot ya está completamente configurado. 🎉",
-    intro: "¡Hola! Soy Franco's Armada – tu bot versátil para gestionar el servidor. Puedo ayudar con verificación, canales de voz one-tap, moderación y más. Made by Franco (YOUR_USER_ID_HERE). ¡Empecemos! ⚓"
+    intro: "¡Hola! Soy Franco's Armada 🔱 – tu bot versátil para gestionar el servidor. Puedo ayudar con verificación, canales de voz one-tap, moderación y más. Made by Franco 🔱. ¡Empecemos! ⚓"
   },
   russian: {
     readyPrompt: "Отлично! Теперь введите `ready` в этом канале, чтобы начать настройку. (У вас 90 секунд на каждый ответ.)",
     setupStart: "Хорошо, давайте начнем настройку. Я задам вам серию вопросов с ID. Пожалуйста, скопируйте и вставьте каждый ID, когда будет предложено.",
     setupComplete: "Спасибо за ваше терпение! Ваш бот теперь полностью настроен. 🎉",
-    intro: "Привет! Я Franco's Armada – ваш универсальный бот для управления сервером. Я помогаю с верификацией, каналами one-tap, модерацией и многим другим. Made by Franco (YOUR_USER_ID_HERE). Давайте начнем! ⚓"
+    intro: "Привет! Я Franco's Armada 🔱 – ваш универсальный бот для управления сервером. Я помогаю с верификацией, каналами one-tap, модерацией и многим другим. Made by Franco 🔱. Давайте начнем! ⚓"
   },
   french: {
     readyPrompt: "Super ! Tapez maintenant `ready` dans ce canal pour commencer la configuration. (Vous avez 90 secondes par question.)",
     setupStart: "D'accord, commençons la configuration. Je vais vous demander une série d'ID. Veuillez copier-coller chacun d'eux lorsque cela est demandé.",
     setupComplete: "Merci pour votre patience ! Votre bot est maintenant entièrement configuré. 🎉",
-    intro: "Bonjour ! Je suis Franco's Armada – votre bot polyvalent pour gérer votre serveur. Je peux aider avec la vérification, les canaux vocaux one-tap, la modération et bien plus. Made by Franco (YOUR_USER_ID_HERE). Allons-y ! ⚓"
+    intro: "Bonjour ! Je suis Franco's Armada 🔱 – votre bot polyvalent pour gérer votre serveur. Je peux aider avec la vérification, les canaux vocaux one-tap, la modération et bien plus. Made by Franco 🔱. Allons-y ! ⚓"
   }
 };
 
@@ -169,11 +169,11 @@ async function awaitResponse(channel, userId, prompt, lang) {
     return collected.first().content.trim();
   } catch (err) {
     await channel.send(
-      (lang === "english" && "Setup timed out. Please type `ready` to start the setup again.") ||
-      (lang === "darija" && "Setup t9llat. Kteb `ready` bach tbda men jdod.") ||
-      (lang === "spanish" && "El tiempo de configuración ha expirado. Por favor, escribe `ready` para reiniciar el proceso.") ||
-      (lang === "russian" && "Время на настройку истекло. Пожалуйста, введите `ready`, чтобы начать заново.") ||
-      (lang === "french" && "Le délai de configuration a expiré. Veuillez taper `ready` pour recommencer.")
+      (lang === "english" && "Setup timed out 🤷‍♂️. Please type `ready` to start the setup again.") ||
+      (lang === "darija" && "# Sala lw9t hh 🤷‍♂️. Kteb `ready` bach tbda men jdid.") ||
+      (lang === "spanish" && "El tiempo de configuración ha expirado 🤷‍♂️. Por favor, escribe `ready` para reiniciar el proceso.") ||
+      (lang === "russian" && "Время на настройку истекло 🤷‍♂️. Пожалуйста, введите `ready`, чтобы начать заново.") ||
+      (lang === "french" && "Le délai de configuration a expiré 🤷‍♂️. Veuillez taper `ready` pour recommencer.")
     );
     throw new Error("Setup timed out");
   }
@@ -202,7 +202,7 @@ async function runSetup(ownerId, setupChannel, guildId, lang) {
     console.error("Error saving configuration:", err);
     await setupChannel.send(
       (lang === "english" && "There was an error saving your configuration. Please try again or contact support.") ||
-      (lang === "darija" && "Kan chi mouchkil f saving configuration. 3awd l7awl aw tsift l'mossa3ada.") ||
+      (lang === "darija" && "Chi mouchkil f saving configuration. 3awd 7awl awla twasel m3a l'support.") ||
       (lang === "spanish" && "Hubo un error al guardar la configuración. Por favor, inténtalo de nuevo o contacta al soporte.") ||
       (lang === "russian" && "Произошла ошибка при сохранении настроек. Пожалуйста, попробуйте снова или свяжитесь со службой поддержки.") ||
       (lang === "french" && "Une erreur est survenue lors de l'enregistrement de votre configuration. Veuillez réessayer ou contacter le support.")
@@ -217,7 +217,7 @@ async function runSetup(ownerId, setupChannel, guildId, lang) {
 // ==============================
 client.commands = new Collection();
 const slashCommands = [
-  // Customization commands:
+  // Customization command:
   new SlashCommandBuilder()
     .setName('setprefix')
     .setDescription('Set a custom prefix for this server')
@@ -279,6 +279,107 @@ client.once(Events.ClientReady, () => {
 });
 
 // ==============================
+// Voice State Update Handler (Verification and One-Tap Systems)
+// ==============================
+const verificationSessions = new Map(); // { vcId: { userId, assignedVerificator, rejected } }
+const onetapSessions = new Map();       // { vcId: { owner, rejectedUsers: [], status } }
+
+client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
+  const guild = newState.guild || oldState.guild;
+  
+  // Verification System: When a user joins the designated Voice Verification channel.
+  if (newState.channelId === process.env.VOICE_VERIFICATION) {
+    try {
+      const member = newState.member;
+      const tempVC = await guild.channels.create({
+        name: `Verify - ${member.displayName}`,
+        type: 2, // Voice channel.
+        parent: newState.channel.parentId,
+        permissionOverwrites: [] // Configure as needed.
+      });
+      console.log(`Created verification VC: ${tempVC.name} for ${member.displayName}`);
+      await member.voice.setChannel(tempVC);
+      verificationSessions.set(tempVC.id, { userId: member.id, assignedVerificator: null, rejected: false });
+      // Send a pop-up message in the designated alert channel.
+      const alertChannel = guild.channels.cache.get(process.env.CHANNEL_VERIFICATION_ALERT);
+      if (alertChannel) {
+        const joinButton = new ButtonBuilder()
+          .setCustomId(`join_verification_${tempVC.id}`)
+          .setLabel("🚀 Join Verification")
+          .setStyle(ButtonStyle.Primary);
+        const row = new ActionRowBuilder().addComponents(joinButton);
+        const alertEmbed = new EmbedBuilder().setTitle("# Member JDID AJEW 🙋‍♂️").setColor(0x00AE86);
+        const alertMsg = await alertChannel.send({ embeds: [alertEmbed], components: [row] });
+        setTimeout(() => { alertMsg.delete().catch(console.error); }, 9000);
+      } else {
+        console.error("Alert channel not found.");
+      }
+    } catch (err) {
+      console.error("Error creating verification VC:", err);
+    }
+  }
+  
+  // One-Tap System: When a user joins the designated Voice One-Tap channel.
+  if (newState.channelId === process.env.VOICE_ONETAP) {
+    try {
+      const member = newState.member;
+      const tempVC = await guild.channels.create({
+        name: `${member.displayName}'s Room`,
+        type: 2,
+        parent: newState.channel.parentId,
+        permissionOverwrites: [
+          { id: guild.id, deny: [PermissionsBitField.Flags.Connect] },
+          { id: member.id, allow: [PermissionsBitField.Flags.Connect] }
+        ]
+      });
+      console.log(`Created one-tap VC: ${tempVC.name} for ${member.displayName}`);
+      onetapSessions.set(tempVC.id, { owner: member.id, rejectedUsers: [] });
+      await member.voice.setChannel(tempVC);
+    } catch (err) {
+      console.error("Error creating one-tap VC:", err);
+    }
+  }
+  
+  // One-Tap Owner Reassignment: If the owner leaves the one-tap channel.
+  if (oldState.channel && onetapSessions.has(oldState.channel.id)) {
+    let tapSession = onetapSessions.get(oldState.channel.id);
+    if (oldState.member.id === tapSession.owner) {
+      const remaining = oldState.channel.members;
+      if (remaining.size > 0) {
+        const newOwner = remaining.first();
+        tapSession.owner = newOwner.id;
+        onetapSessions.set(oldState.channel.id, tapSession);
+        await oldState.channel.permissionOverwrites.edit(newOwner.id, { Connect: true });
+      }
+    }
+  }
+  
+  // Auto-delete empty temporary voice channels.
+  if (oldState.channel && oldState.channel.members.size === 0) {
+    const channelId = oldState.channel.id;
+    if (verificationSessions.has(channelId) || onetapSessions.has(channelId)) {
+      oldState.channel.delete().catch(() => {});
+      verificationSessions.delete(channelId);
+      onetapSessions.delete(channelId);
+    }
+  }
+  
+  // Verification VC: If the verificator leaves, move the verified user.
+  if (oldState.channel && verificationSessions.has(oldState.channel.id)) {
+    const session = verificationSessions.get(oldState.channel.id);
+    if (oldState.member.id === session.assignedVerificator) {
+      if (oldState.channel.members.has(session.userId)) {
+        const verifiedMember = oldState.channel.members.get(session.userId);
+        const activeVC = guild.channels.cache.filter(ch => ch.type === 2 && ch.id !== oldState.channel.id && ch.members.size > 0).first();
+        if (activeVC) {
+          await verifiedMember.voice.setChannel(activeVC);
+        }
+      }
+    }
+  }
+});
+
+// ==============================
 // Guild Create Event: Create Temporary "bot-setup" Channel & Send Welcome Message
 // ==============================
 client.on(Events.GuildCreate, async guild => {
@@ -313,6 +414,7 @@ client.on(Events.GuildCreate, async guild => {
       languageExtras.english.intro + "\n\n" +
       "Before we set sail, please choose your language by clicking one of the buttons below.\n" +
       "Then, I'll guide you through a step-by-step configuration to set up the following IDs:\n" +
+      
       "• Verified Role ID\n" +
       "• Unverified Role ID\n" +
       "• Verified Girl Role ID\n" +
@@ -322,6 +424,7 @@ client.on(Events.GuildCreate, async guild => {
       "• Verification Alert Channel ID\n" +
       "• Jail Role ID\n" +
       "• Voice Jail Channel ID\n\n" +
+      
       "Once setup is complete, this channel will be automatically deleted.\n" +
       "Made by Franco (YOUR_USER_ID_HERE) • Type `/help` for a list of commands. Let's set sail together! ⚓"
     );
@@ -341,7 +444,7 @@ client.on('interactionCreate', async interaction => {
         confirmationMessage = "Language set to English! 👌";
         break;
       case "darija":
-        confirmationMessage = "Language set to Darija! 👌";
+        confirmationMessage = "Lougha Dialk Daba B Darija! 👌";
         break;
       case "spanish":
         confirmationMessage = "¡Idioma establecido a Español! 👌";
@@ -370,7 +473,7 @@ client.on('interactionCreate', async interaction => {
     const readyPrompt = languageExtras[language]?.readyPrompt || "Now type `ready` to begin the setup process.";
     await interaction.channel.send(readyPrompt);
   }
-  // Slash command handler for all slash commands.
+  // Slash command handler for /setprefix, /help, and other commands.
   else if (interaction.isChatInputCommand()) {
     const { commandName } = interaction;
     if (commandName === 'setprefix') {
@@ -397,13 +500,12 @@ client.on('interactionCreate', async interaction => {
           { name: "Profile Viewer", value: "`r` → View your profile picture (with Avatar/Banner buttons)", inline: false },
           { name: "Customization", value: "`/setprefix` → Set your custom command prefix", inline: false },
           { name: "One-Tap Commands", value: "`/claim`, `/reject`, `/kick`, `/mute`, `/unmute`, `/transfer`, `/name`, `/status`", inline: false },
-          { name: "Admin Commands", value: "`/toponline`, `/topvrf`, `/binfo`, `/jinfo`", inline: false }
+          { name: "Admin Commands", value: "`/toponline`, `/topvrf`, `/binfo`, `/jinfo`", inline: false },
         );
       return interaction.reply({ embeds: [helpEmbed], ephemeral: true });
     }
     // One-Tap Commands:
     else if (commandName === 'claim') {
-      // Claim ownership of the one-tap channel.
       const member = interaction.member;
       const vc = member.voice.channel;
       if (!vc || !onetapSessions.has(vc.id)) {
@@ -413,13 +515,11 @@ client.on('interactionCreate', async interaction => {
       if (session.owner === member.id) {
         return interaction.reply({ content: "You are already the owner of this channel.", ephemeral: true });
       }
-      // Allow claiming only if there is no current owner (or if the owner left).
       session.owner = member.id;
       onetapSessions.set(vc.id, session);
       return interaction.reply({ content: "You have claimed ownership of this channel.", ephemeral: true });
     }
     else if (commandName === 'reject') {
-      // Reject a user from the one-tap channel.
       const target = interaction.options.getUser('target');
       const member = interaction.member;
       const vc = member.voice.channel;
@@ -436,7 +536,6 @@ client.on('interactionCreate', async interaction => {
       return interaction.reply({ content: `User ${target.username} has been rejected from this channel.`, ephemeral: true });
     }
     else if (commandName === 'kick') {
-      // Kick a user from the one-tap channel.
       const target = interaction.options.getUser('target');
       const member = interaction.member;
       const vc = member.voice.channel;
@@ -457,7 +556,6 @@ client.on('interactionCreate', async interaction => {
       }
     }
     else if (commandName === 'mute') {
-      // Mute a user in the voice channel.
       const target = interaction.options.getUser('target');
       const targetMember = interaction.guild.members.cache.get(target.id);
       if (!targetMember) return interaction.reply({ content: "User not found.", ephemeral: true });
@@ -470,7 +568,6 @@ client.on('interactionCreate', async interaction => {
       }
     }
     else if (commandName === 'unmute') {
-      // Unmute a user in the voice channel.
       const target = interaction.options.getUser('target');
       const targetMember = interaction.guild.members.cache.get(target.id);
       if (!targetMember) return interaction.reply({ content: "User not found.", ephemeral: true });
@@ -483,7 +580,6 @@ client.on('interactionCreate', async interaction => {
       }
     }
     else if (commandName === 'transfer') {
-      // Transfer ownership of the one-tap channel.
       const target = interaction.options.getUser('target');
       const member = interaction.member;
       const vc = member.voice.channel;
@@ -499,7 +595,6 @@ client.on('interactionCreate', async interaction => {
       return interaction.reply({ content: `Ownership has been transferred to ${target.username}.`, ephemeral: true });
     }
     else if (commandName === 'name') {
-      // Rename the one-tap channel.
       const newName = interaction.options.getString('text');
       const member = interaction.member;
       const vc = member.voice.channel;
@@ -518,7 +613,6 @@ client.on('interactionCreate', async interaction => {
       }
     }
     else if (commandName === 'status') {
-      // Set a status for the one-tap channel.
       const statusText = interaction.options.getString('text');
       const member = interaction.member;
       const vc = member.voice.channel;
@@ -529,7 +623,6 @@ client.on('interactionCreate', async interaction => {
         return interaction.reply({ content: "Only the channel owner can set the status.", ephemeral: true });
       }
       try {
-        // Here, we store the status in the session for demonstration.
         let session = onetapSessions.get(vc.id);
         session.status = statusText;
         onetapSessions.set(vc.id, session);
@@ -541,15 +634,12 @@ client.on('interactionCreate', async interaction => {
     }
     // Admin commands:
     else if (commandName === 'toponline') {
-      // Placeholder: Show most online users.
       return interaction.reply({ content: "Top online users: [Feature coming soon...]", ephemeral: true });
     }
     else if (commandName === 'topvrf') {
-      // Placeholder: Show top verificators.
       return interaction.reply({ content: "Top verificators: [Feature coming soon...]", ephemeral: true });
     }
     else if (commandName === 'binfo') {
-      // Placeholder: Show total bans.
       try {
         const bans = await interaction.guild.bans.fetch();
         return interaction.reply({ content: `Total bans: ${bans.size}`, ephemeral: true });
@@ -559,10 +649,7 @@ client.on('interactionCreate', async interaction => {
       }
     }
     else if (commandName === 'jinfo') {
-      // Placeholder: Show jail info for a user.
       const userId = interaction.options.getString('userid');
-      // For demonstration, we assume jail info is stored in a collection or in-memory.
-      // Here, we'll just reply with a stub message.
       return interaction.reply({ content: `Jail info for user ${userId}: [Feature coming soon...]`, ephemeral: true });
     }
   }
@@ -588,6 +675,184 @@ client.on('messageCreate', async (message) => {
       }, 5000);
     } catch (err) {
       console.error("Setup process error:", err);
+    }
+  }
+});
+
+// ==============================
+// Message Handler for Profile Viewer – "R" Command Only
+// ==============================
+client.on('messageCreate', async (message) => {
+  if (message.author.bot) return;
+  const content = message.content.trim();
+  if (content.toLowerCase().startsWith('r')) {
+    let targetUser = message.mentions.users.first() || message.author;
+    try {
+      targetUser = await targetUser.fetch();
+    } catch (err) {
+      console.error("Error fetching user data:", err);
+      return message.reply("Error fetching user data.");
+    }
+    const embed = new EmbedBuilder()
+      .setColor(0x0099ff)
+      .setTitle(`${targetUser.username}'s Profile Picture`)
+      .setDescription("Click a button below to view Avatar or Banner.")
+      .setThumbnail(targetUser.displayAvatarURL({ dynamic: true, size: 1024 }));
+    const avatarButton = new ButtonBuilder()
+      .setCustomId(`avatar_${targetUser.id}`)
+      .setLabel("Avatar")
+      .setStyle(ButtonStyle.Primary);
+    const bannerButton = new ButtonBuilder()
+      .setCustomId(`banner_${targetUser.id}`)
+      .setLabel("Banner")
+      .setStyle(ButtonStyle.Secondary);
+    const row = new ActionRowBuilder().addComponents(avatarButton, bannerButton);
+    message.channel.send({ embeds: [embed], components: [row] });
+  }
+});
+
+// ==============================
+// Interaction Handler for Profile Viewer Buttons
+// ==============================
+client.on('interactionCreate', async (interaction) => {
+  if (!interaction.isButton()) return;
+  const [action, userId] = interaction.customId.split('_');
+  if (!userId) return;
+  let targetUser;
+  try {
+    targetUser = await client.users.fetch(userId, { force: true });
+  } catch (err) {
+    console.error("Error fetching user for profile:", err);
+    return interaction.reply({ content: "Error fetching user data.", ephemeral: true });
+  }
+  if (action === 'avatar') {
+    const avatarURL = targetUser.displayAvatarURL({ dynamic: true, size: 1024 });
+    const embed = new EmbedBuilder()
+      .setColor(0x00AE86)
+      .setTitle(`${targetUser.username}'s Avatar`)
+      .setImage(avatarURL)
+      .setFooter({ text: `Requested by: ${interaction.user.username}` });
+    return interaction.update({ embeds: [embed] });
+  } else if (action === 'banner') {
+    const bannerURL = targetUser.bannerURL({ dynamic: true, size: 1024 });
+    if (!bannerURL) {
+      return interaction.reply({ content: "This user does not have a banner set.", ephemeral: true });
+    }
+    const embed = new EmbedBuilder()
+      .setColor(0x00AE86)
+      .setTitle(`${targetUser.username}'s Banner`)
+      .setImage(bannerURL)
+      .setFooter({ text: `Requested by: ${interaction.user.username}` });
+    return interaction.update({ embeds: [embed] });
+  }
+});
+
+// ==============================
+// Verification Commands (Example: +boy / +girl)
+// ==============================
+client.on('messageCreate', async (message) => {
+  if (message.author.bot) return;
+  
+  if (message.content.startsWith('+boy') || message.content.startsWith('+girl')) {
+    let sessionId;
+    for (const [vcId, session] of verificationSessions.entries()) {
+      if (message.member.voice.channelId === vcId) {
+        if (!session.assignedVerificator) {
+          session.assignedVerificator = message.author.id;
+          verificationSessions.set(vcId, session);
+        }
+        if (session.assignedVerificator === message.author.id) {
+          sessionId = vcId;
+          break;
+        }
+      }
+    }
+    if (!sessionId) {
+      return message.reply("No active verification session found for you.");
+    }
+    const session = verificationSessions.get(sessionId);
+    const memberToVerify = message.guild.members.cache.get(session.userId);
+    if (!memberToVerify) return message.reply("User not found.");
+    try {
+      await memberToVerify.roles.remove(process.env.ROLE_UNVERIFIED);
+      let verifiedRoleName;
+      if (message.content.startsWith('+boy')) {
+        await memberToVerify.roles.add(process.env.ROLE_VERIFIED_BOY);
+        verifiedRoleName = "Verified Boy";
+      } else {
+        await memberToVerify.roles.add(process.env.ROLE_VERIFIED_GIRL);
+        verifiedRoleName = "Verified Girl";
+      }
+      // Determine language for welcome DM.
+      const serverConfig = await settingsCollection.findOne({ serverId: message.guild.id });
+      const lang = (serverConfig && serverConfig.language) || "english";
+      const verificationWelcome = {
+        english: "No Toxic Guys Here ❌️☢️. We're here to chill and enjoy our time. Welcome again! 🌸❤️",
+        darija: "Bla Toxicity ❌️☢️. Hna bash nrelaxiw w nstmt3o bw9tna. Marhba bik men jdid! 🌸❤️",
+        spanish: "No toxic, chicos ❌️☢️. Estamos aquí para relajarnos y disfrutar. ¡Bienvenidos de nuevo! 🌸❤️",
+        russian: "Никакого токсика, ребята ❌️☢️. Мы здесь, чтобы расслабиться и насладиться временем. Снова добро пожаловать! 🌸❤️",
+        french: "Pas de toxicité, les gars ❌️☢️. Nous sommes ici pour nous détendre et profiter du temps. Bienvenue à nouveau! 🌸❤️"
+      };
+      const welcomeDM = verificationWelcome[lang] || verificationWelcome.english;
+      await memberToVerify.send(welcomeDM);
+      message.channel.send(`<@${memberToVerify.id}> was verified as ${verifiedRoleName} successfully!`);
+      setTimeout(async () => {
+        const verifVC = message.guild.channels.cache.get(sessionId);
+        if (verifVC) {
+          if (verifVC.members.size === 0 || (verifVC.members.size === 1 && verifVC.members.has(message.author.id))) {
+            await verifVC.delete().catch(() => {});
+            verificationSessions.delete(sessionId);
+          }
+        }
+      }, 30000);
+      return message.reply("Verification complete.");
+    } catch (err) {
+      console.error("Verification error:", err);
+      return message.reply("Verification failed.");
+    }
+  }
+  
+  // Jail Commands (Example: +jail, +unjail)
+  if (message.content.startsWith('+jail')) {
+    if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+      return message.reply("You don't have permission to use this command.");
+    }
+    const args = message.content.split(' ');
+    if (args.length < 3) return message.reply("Usage: +jail <userID> <reason>");
+    const targetId = args[1];
+    const reason = args.slice(2).join(' ');
+    const targetMember = message.guild.members.cache.get(targetId);
+    if (!targetMember) return message.reply("User not found.");
+    try {
+      const rolesToRemove = targetMember.roles.cache
+        .filter(role => role.id !== targetMember.guild.id)
+        .map(role => role.id);
+      await targetMember.roles.remove(rolesToRemove, "Jailed: Removing all roles");
+      await targetMember.roles.add(process.env.ROLE_JAILED);
+      const jailVC = message.guild.channels.cache.get(process.env.VOICE_JAIL);
+      if (jailVC) await targetMember.voice.setChannel(jailVC);
+      message.channel.send(`User ${targetMember.displayName} has been jailed.`);
+    } catch (err) {
+      console.error("Jail error:", err);
+      return message.reply("Failed to jail the user.");
+    }
+  }
+  
+  if (message.content.startsWith('+unjail')) {
+    if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+      return message.reply("You don't have permission to use this command.");
+    }
+    const args = message.content.split(' ');
+    if (args.length < 2) return message.reply("Usage: +unjail <userID>");
+    const targetId = args[1];
+    const targetMember = message.guild.members.cache.get(targetId);
+    if (!targetMember) return message.reply("User not found.");
+    try {
+      await targetMember.roles.remove(process.env.ROLE_JAILED);
+      message.channel.send(`User ${targetMember.displayName} has been unjailed.`);
+    } catch (err) {
+      console.error("Unjail error:", err);
+      return message.reply("Failed to unjail the user.");
     }
   }
 });

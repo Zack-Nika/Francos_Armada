@@ -6,8 +6,7 @@
 // • Assigns new members the unverified role and DMs them a welcome message (using a custom welcome if set).
 // • Creates a permanent "bot-config" channel for later configuration (e.g. updating prefix or welcome message).
 // • Implements voice state handling for verification (temporary VC creation with a pop-up alert) and a fixed one‑tap channel.
-// • Provides slash commands for customization (/setprefix, /setwelcome, /showwelcome), one‑tap management, dashboard commands (/toponline, /topmembers, /topvrf, /binfo, /jinfo)
-//   with proper permissions, and an "R" command for profile viewing.
+// • Provides slash commands for customization (/setprefix, /setwelcome, /showwelcome), one‑tap management, dashboard commands, and an "R" command for profile viewing.
 // (Ensure your .env includes DISCORD_TOKEN, MONGODB_URI, CLIENT_ID, GUILD_ID, etc.)
 
 require('dotenv').config();
@@ -73,7 +72,6 @@ const setupStarted = new Map(); // Prevents multiple "ready" triggers per guild
 client.on(Events.GuildMemberAdd, async member => {
   try {
     const config = await settingsCollection.findOne({ serverId: member.guild.id });
-    // Use custom welcome if set, else default message.
     const welcomeMsg = (config && config.customWelcome) ? config.customWelcome :
       "Merhba Bik Fi A7sen Server Fl Maghrib! Daba ayji 3ndk Verificator bash yverifik 😊";
     if (config && config.unverifiedRoleId) {
@@ -549,6 +547,43 @@ client.on('interactionCreate', async interaction => {
 });
 
 // ------------------------------
+// Ready Command Handler for Interactive Setup (in "bot-setup" channel)
+// ------------------------------
+client.on('messageCreate', async (message) => {
+  if (message.author.bot) return;
+  // For debugging, log channel name and author ID.
+  console.log(`Message received in channel: ${message.channel.name} from ${message.author.tag}`);
+  // Ensure we're in the setup channel. (You can remove or adjust this check if needed.)
+  if (message.channel.name !== 'bot-setup') return;
+  // Only allow the guild owner to trigger setup.
+  if (message.author.id !== message.guild.ownerId) return;
+  
+  if (message.content.toLowerCase() === 'ready') {
+    console.log(`Ready command received from owner ${message.author.tag} in guild ${message.guild.name}`);
+    if (setupStarted.get(message.guild.id)) {
+      console.log("Setup already started for this guild.");
+      return;
+    }
+    setupStarted.set(message.guild.id, true);
+    
+    // Fetch language from DB; fallback to English if not set.
+    const serverConfig = await settingsCollection.findOne({ serverId: message.guild.id });
+    const lang = (serverConfig && serverConfig.language) || "english";
+    await message.channel.send(languageExtras[lang]?.setupStart);
+    try {
+      await runSetup(message.author.id, message.channel, message.guild.id, lang);
+      await message.channel.send(languageExtras[lang]?.setupComplete);
+      // Delete the setup channel after a delay.
+      setTimeout(() => {
+        message.channel.delete().catch(console.error);
+      }, 5000);
+    } catch (err) {
+      console.error("Setup process error:", err);
+    }
+  }
+});
+
+// ------------------------------
 // Create Permanent "bot-config" Channel on Guild Join
 // ------------------------------
 client.on(Events.GuildCreate, async guild => {
@@ -578,14 +613,13 @@ client.on(Events.GuildCreate, async guild => {
       permissionOverwrites: [
         { id: guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
         { id: owner.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] }
-        // Optionally add permissions for an admin role if desired.
       ]
     });
     console.log("Created bot-config channel for", guild.name);
   } catch (error) {
     console.error("Failed to create bot-config channel:", error);
   }
-  // Send welcome embed in setup channel.
+  // Send welcome embed in the setup channel.
   const englishButton = new ButtonBuilder().setCustomId('lang_english').setLabel('English').setStyle(ButtonStyle.Primary);
   const darijaButton = new ButtonBuilder().setCustomId('lang_darija').setLabel('Darija').setStyle(ButtonStyle.Primary);
   const spanishButton = new ButtonBuilder().setCustomId('lang_spanish').setLabel('Spanish').setStyle(ButtonStyle.Primary);
@@ -669,7 +703,7 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
     }
   }
   
-  // One-Tap Owner Reassignment (if using temporary channels):
+  // One-Tap Owner Reassignment:
   if (oldState.channel && onetapSessions.has(oldState.channel.id)) {
     let tapSession = onetapSessions.get(oldState.channel.id);
     if (oldState.member.id === tapSession.owner) {
@@ -776,9 +810,7 @@ client.on('messageCreate', async (message) => {
   if (message.author.bot) return;
   const content = message.content.trim().toLowerCase();
   if ((content === 'r' || content.startsWith('r ')) && content !== 'ready') {
-    // If there's a mention, use it; otherwise, default to author.
     let targetUser = message.mentions.users.first() || message.author;
-    // Extra check: if targetUser is not an object (e.g. a string), default to author.
     if (typeof targetUser === "string") targetUser = message.author;
     try {
       targetUser = await targetUser.fetch();
@@ -809,7 +841,168 @@ client.on('messageCreate', async (message) => {
 // ------------------------------
 client.on('interactionCreate', async (interaction) => {
   if (!interaction.isButton()) return;
-  // Skip language buttons in this handler.
+  if (interaction.customId.startsWith("lang_")) return; // Skip language buttons here.
+  const [action, userId] = interaction.customId.split('_');
+  if (!userId) return;
+  let targetUser;
+  try {
+    targetUser = await client.users.fetch(userId, { force: true });
+  } catch (err) {
+    console.error("Error fetching user for profile:", err);
+    return interaction.reply({ content: "Error fetching user data.", ephemeral: true });
+  }
+  if (action === 'avatar') {
+    const avatarURL = targetUser.displayAvatarURL({ dynamic: true, size: 1024 });
+    const embed = new EmbedBuilder()
+      .setColor(0x00AE86)
+      .setTitle(`${targetUser.username}'s Avatar`)
+      .setImage(avatarURL)
+      .setFooter({ text: `Requested by: ${interaction.user.username}` });
+    return interaction.update({ embeds: [embed] });
+  } else if (action === 'banner') {
+    const bannerURL = targetUser.bannerURL({ dynamic: true, size: 1024 });
+    if (!bannerURL) {
+      return interaction.reply({ content: "This user does not have a banner set.", ephemeral: true });
+    }
+    const embed = new EmbedBuilder()
+      .setColor(0x00AE86)
+      .setTitle(`${targetUser.username}'s Banner`)
+      .setImage(bannerURL)
+      .setFooter({ text: `Requested by: ${interaction.user.username}` });
+    return interaction.update({ embeds: [embed] });
+  }
+});
+
+// ------------------------------
+// Ready Command Handler for Interactive Setup (in "bot-setup" channel)
+// ------------------------------
+client.on('messageCreate', async (message) => {
+  if (message.author.bot) return;
+  console.log(`Message received in channel: ${message.channel.name} from ${message.author.tag}`);
+  // For now, do not restrict to channel name (remove this check if needed for debugging):
+  // if (message.channel.name !== 'bot-setup') return;
+  if (message.author.id !== message.guild.ownerId) return; // Only owner can trigger setup.
+  
+  if (message.content.toLowerCase() === 'ready') {
+    console.log(`Ready command received from owner ${message.author.tag} in guild ${message.guild.name}`);
+    if (setupStarted.get(message.guild.id)) {
+      console.log("Setup already started for this guild.");
+      return;
+    }
+    setupStarted.set(message.guild.id, true);
+    
+    const serverConfig = await settingsCollection.findOne({ serverId: message.guild.id });
+    const lang = (serverConfig && serverConfig.language) || "english";
+    await message.channel.send(languageExtras[lang]?.setupStart);
+    try {
+      await runSetup(message.author.id, message.channel, message.guild.id, lang);
+      await message.channel.send(languageExtras[lang]?.setupComplete);
+      setTimeout(() => {
+        message.channel.delete().catch(console.error);
+      }, 5000);
+    } catch (err) {
+      console.error("Setup process error:", err);
+    }
+  }
+});
+
+// ------------------------------
+// Create Permanent "bot-config" Channel on Guild Join
+// ------------------------------
+client.on(Events.GuildCreate, async guild => {
+  let setupChannel;
+  try {
+    setupChannel = await guild.channels.create({
+      name: 'bot-setup',
+      type: 0,
+      topic: 'Use this channel to configure the bot. It will be deleted after setup is complete.',
+      permissionOverwrites: [
+        { id: guild.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] }
+      ]
+    });
+    setupChannel.send(`<@${guild.ownerId}>, welcome! Let's set up your bot configuration.`);
+  } catch (error) {
+    console.error("Failed to create setup channel:", error);
+    return;
+  }
+  try {
+    const owner = await guild.fetchOwner();
+    await guild.channels.create({
+      name: 'bot-config',
+      type: 0,
+      topic: 'Bot configuration channel. Use slash commands like /setprefix and /setwelcome here.',
+      permissionOverwrites: [
+        { id: guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
+        { id: owner.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] }
+      ]
+    });
+    console.log("Created bot-config channel for", guild.name);
+  } catch (error) {
+    console.error("Failed to create bot-config channel:", error);
+  }
+  const englishButton = new ButtonBuilder().setCustomId('lang_english').setLabel('English').setStyle(ButtonStyle.Primary);
+  const darijaButton = new ButtonBuilder().setCustomId('lang_darija').setLabel('Darija').setStyle(ButtonStyle.Primary);
+  const spanishButton = new ButtonBuilder().setCustomId('lang_spanish').setLabel('Spanish').setStyle(ButtonStyle.Primary);
+  const russianButton = new ButtonBuilder().setCustomId('lang_russian').setLabel('Russian').setStyle(ButtonStyle.Primary);
+  const frenchButton = new ButtonBuilder().setCustomId('lang_french').setLabel('French').setStyle(ButtonStyle.Primary);
+  const row = new ActionRowBuilder().addComponents(englishButton, darijaButton, spanishButton, russianButton, frenchButton);
+  const embed = new EmbedBuilder()
+    .setColor(0x00AE86)
+    .setTitle("Welcome to Franco's Armada! 🔱🚢")
+    .setDescription(
+      languageExtras.english.intro + "\n\n" +
+      "Before we set sail, please choose your language by clicking one of the buttons below.\n" +
+      "Then, I'll guide you through a step-by-step configuration to set up the following IDs:\n" +
+      "• Verified Role ID\n" +
+      "• Unverified Role ID\n" +
+      "• Verified Girl Role ID\n" +
+      "• Verificator Role ID\n" +
+      "• Voice Verification Channel ID\n" +
+      "• One-Tap Channel ID\n" +
+      "• Verification Alert Channel ID\n" +
+      "• Jail Role ID\n" +
+      "• Voice Jail Channel ID\n\n" +
+      "Once setup is complete, this channel will be automatically deleted.\n" +
+      "Made by Franco (YOUR_USER_ID_HERE) • Type `/help` for a list of commands. Let's set sail together! ⚓"
+    );
+  setupChannel.send({ embeds: [embed], components: [row] });
+});
+
+// ------------------------------
+// "R" Command and Interaction Handler for Profile Viewer Buttons
+// ------------------------------
+client.on('messageCreate', async (message) => {
+  if (message.author.bot) return;
+  const content = message.content.trim().toLowerCase();
+  if ((content === 'r' || content.startsWith('r ')) && content !== 'ready') {
+    let targetUser = message.mentions.users.first() || message.author;
+    if (typeof targetUser === "string") targetUser = message.author;
+    try {
+      targetUser = await targetUser.fetch();
+    } catch (err) {
+      console.error("Error fetching user data:", err);
+      return message.reply("Error fetching user data. Please mention a valid user or type just 'r'.");
+    }
+    const embed = new EmbedBuilder()
+      .setColor(0x0099ff)
+      .setTitle(`${targetUser.username}'s Profile Picture`)
+      .setDescription("Click a button below to view Avatar or Banner.")
+      .setThumbnail(targetUser.displayAvatarURL({ dynamic: true, size: 1024 }));
+    const avatarButton = new ButtonBuilder()
+      .setCustomId(`avatar_${targetUser.id}`)
+      .setLabel("Avatar")
+      .setStyle(ButtonStyle.Primary);
+    const bannerButton = new ButtonBuilder()
+      .setCustomId(`banner_${targetUser.id}`)
+      .setLabel("Banner")
+      .setStyle(ButtonStyle.Secondary);
+    const row = new ActionRowBuilder().addComponents(avatarButton, bannerButton);
+    message.channel.send({ embeds: [embed], components: [row] });
+  }
+});
+
+client.on('interactionCreate', async (interaction) => {
+  if (!interaction.isButton()) return;
   if (interaction.customId.startsWith("lang_")) return;
   const [action, userId] = interaction.customId.split('_');
   if (!userId) return;

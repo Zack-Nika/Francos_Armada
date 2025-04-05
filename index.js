@@ -6,9 +6,8 @@
 // • Assigns new members the unverified role and DMs them a welcome message (using a custom welcome if set).
 // • Creates a permanent "bot-config" channel for later configuration (e.g. updating prefix or welcome message).
 // • Implements voice state handling for verification (temporary VC creation with a pop-up alert) and a fixed one‑tap channel.
-// • Provides slash commands for customization (/setprefix, /setwelcome, /showwelcome), one‑tap management,
-//   dashboard commands (/toponline, /topmembers, /topvrf, /binfo, /jinfo) with proper permissions,
-//   and an "R" command for profile viewing.
+// • Provides slash commands for customization (/setprefix, /setwelcome, /showwelcome), one‑tap management, dashboard commands (/toponline, /topmembers, /topvrf, /binfo, /jinfo)
+//   with proper permissions, and an "R" command for profile viewing.
 // (Ensure your .env includes DISCORD_TOKEN, MONGODB_URI, CLIENT_ID, GUILD_ID, etc.)
 
 require('dotenv').config();
@@ -66,7 +65,7 @@ const client = new Client({
 // ------------------------------
 // Prevent Setup Duplication
 // ------------------------------
-const setupStarted = new Map(); // Prevent multiple "ready" triggers per guild
+const setupStarted = new Map(); // Prevents multiple "ready" triggers per guild
 
 // ------------------------------
 // GuildMemberAdd: Assign Unverified Role & DM Welcome Message
@@ -547,16 +546,16 @@ client.on(Events.GuildCreate, async guild => {
     console.error("Failed to create setup channel:", error);
     return;
   }
-  // Create permanent "bot-config" channel for later configuration.
+  // Create permanent "bot-config" channel.
   try {
+    const owner = await guild.fetchOwner();
     await guild.channels.create({
       name: 'bot-config',
       type: 0,
       topic: 'Bot configuration channel. Use slash commands like /setprefix and /setwelcome here.',
       permissionOverwrites: [
         { id: guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
-        { id: guild.ownerId, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] }
-        // Optionally allow a designated admin role.
+        { id: owner.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] }
       ]
     });
     console.log("Created bot-config channel for", guild.name);
@@ -602,7 +601,7 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
   const guild = newState.guild || oldState.guild;
   const config = await settingsCollection.findOne({ serverId: guild.id });
   
-  // Verification System:
+  // Verification System: When a member joins the designated verification voice channel.
   if (config && newState.channelId === config.voiceVerificationChannelId) {
     try {
       const member = newState.member;
@@ -636,7 +635,7 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
     }
   }
   
-  // One-Tap System:
+  // One-Tap System: When a member joins the designated one-tap channel.
   if (config && newState.channelId === config.oneTapChannelId) {
     try {
       const member = newState.member;
@@ -748,15 +747,16 @@ client.on('messageCreate', async (message) => {
 });
 
 // ------------------------------
-// "R" Command for Profile Viewer (Fixed)
+// "R" Command for Profile Viewer (Fixed to avoid fetching non-snowflake strings)
 // ------------------------------
 client.on('messageCreate', async (message) => {
   if (message.author.bot) return;
   const content = message.content.trim().toLowerCase();
-  // Trigger when message is exactly "r" or starts with "r " but not "ready"
   if ((content === 'r' || content.startsWith('r ')) && content !== 'ready') {
-    // Use mention if available; otherwise default to author.
+    // Get mention if present; otherwise default to message author.
     let targetUser = message.mentions.users.first() || message.author;
+    // Extra check: if targetUser is a string (e.g., "darija"), default to author.
+    if (typeof targetUser === "string") targetUser = message.author;
     try {
       targetUser = await targetUser.fetch();
     } catch (err) {

@@ -310,6 +310,28 @@ const slashCommands = [
 })();
 
 // ------------------------------
+// Interaction Handler for Language Buttons
+// ------------------------------
+client.on('interactionCreate', async interaction => {
+  if (interaction.isButton() && interaction.customId.startsWith("lang_")) {
+    const language = interaction.customId.split('_')[1];
+    try {
+      await settingsCollection.updateOne(
+         { serverId: interaction.guild.id },
+         { $set: { language: language } },
+         { upsert: true }
+      );
+      await interaction.reply({ content: `Language set to ${language}!`, ephemeral: true });
+      await interaction.channel.send("Now type `ready` to begin the setup process.");
+    } catch (error) {
+      console.error("Error handling language selection:", error);
+      return interaction.reply({ content: "Error setting language.", ephemeral: true });
+    }
+    return;
+  }
+});
+
+// ------------------------------
 // Interaction Handler for Slash Commands with Permission Checks
 // ------------------------------
 client.on('interactionCreate', async interaction => {
@@ -556,6 +578,7 @@ client.on(Events.GuildCreate, async guild => {
       permissionOverwrites: [
         { id: guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
         { id: owner.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] }
+        // Optionally add permissions for an admin role if desired.
       ]
     });
     console.log("Created bot-config channel for", guild.name);
@@ -601,7 +624,7 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
   const guild = newState.guild || oldState.guild;
   const config = await settingsCollection.findOne({ serverId: guild.id });
   
-  // Verification System: When a member joins the designated verification voice channel.
+  // Verification System:
   if (config && newState.channelId === config.voiceVerificationChannelId) {
     try {
       const member = newState.member;
@@ -635,7 +658,7 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
     }
   }
   
-  // One-Tap System: When a member joins the designated one-tap channel.
+  // One-Tap System:
   if (config && newState.channelId === config.oneTapChannelId) {
     try {
       const member = newState.member;
@@ -747,15 +770,15 @@ client.on('messageCreate', async (message) => {
 });
 
 // ------------------------------
-// "R" Command for Profile Viewer (Fixed to avoid fetching non-snowflake strings)
+// "R" Command for Profile Viewer (Fixed)
 // ------------------------------
 client.on('messageCreate', async (message) => {
   if (message.author.bot) return;
   const content = message.content.trim().toLowerCase();
   if ((content === 'r' || content.startsWith('r ')) && content !== 'ready') {
-    // Get mention if present; otherwise default to message author.
+    // If there's a mention, use it; otherwise, default to author.
     let targetUser = message.mentions.users.first() || message.author;
-    // Extra check: if targetUser is a string (e.g., "darija"), default to author.
+    // Extra check: if targetUser is not an object (e.g. a string), default to author.
     if (typeof targetUser === "string") targetUser = message.author;
     try {
       targetUser = await targetUser.fetch();
@@ -786,6 +809,8 @@ client.on('messageCreate', async (message) => {
 // ------------------------------
 client.on('interactionCreate', async (interaction) => {
   if (!interaction.isButton()) return;
+  // Skip language buttons in this handler.
+  if (interaction.customId.startsWith("lang_")) return;
   const [action, userId] = interaction.customId.split('_');
   if (!userId) return;
   let targetUser;

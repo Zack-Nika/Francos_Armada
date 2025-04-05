@@ -2,14 +2,14 @@
 // Franco's Armada Bot – A fully featured rental bot with interactive, multilingual per‑server setup.
 // This bot:
 // • Connects to MongoDB to store per‑server settings (language, prefix, role/channel IDs).
-// • On joining a server, creates a temporary "bot-setup" channel and sends a welcome embed with language buttons.
+// • On joining a server, creates a temporary "bot-setup" channel and sends a welcome embed with language selection buttons.
 // • Guides the server owner through an interactive setup (all prompts are fully translated into the chosen language)
 //   to collect required IDs for roles and channels.
 // • Saves configuration to MongoDB and deletes the setup channel when finished.
 // • Implements voice state handling for a verification system and a one‑tap system.
 // • Provides slash commands for customization and one‑tap management (/claim, /reject, /kick, /mute, /unmute, /transfer, /name, /status)
 //   as well as admin commands (/toponline, /topvrf, /binfo, /jinfo).
-// • Provides a "R" message command to view a user's profile picture (with Avatar/Banner buttons).
+// • Provides an "R" message command to view a user's profile picture (with Avatar/Banner buttons).
 //
 // (Ensure your environment variables include DISCORD_TOKEN, MONGODB_URI, and any required IDs.)
 
@@ -31,7 +31,9 @@ const {
 } = require('discord.js');
 const { createCanvas, loadImage } = require('@napi-rs/canvas');
 
-// MongoDB connection.
+// ------------------------------
+// MongoDB Connection
+// ------------------------------
 const { MongoClient } = require('mongodb');
 const mongoUri = process.env.MONGODB_URI;
 const mongoClient = new MongoClient(mongoUri);
@@ -48,7 +50,9 @@ async function connectToMongo() {
 }
 connectToMongo();
 
-// Create the Discord client.
+// ------------------------------
+// Create Discord Client
+// ------------------------------
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -61,8 +65,8 @@ const client = new Client({
   partials: [Partials.Channel]
 });
 
-// ==============================
-// Language Translations for Setup Prompts (for required IDs)
+// ------------------------------
+// Language Translations for Setup Prompts (IDs)
 // (For Darija, role/channel names remain in English.)
 const languagePrompts = {
   english: {
@@ -122,9 +126,9 @@ const languagePrompts = {
   }
 };
 
-// ==============================
+// ------------------------------
 // Language Extras: Additional Setup Messages
-// ==============================
+// ------------------------------
 const languageExtras = {
   english: {
     readyPrompt: "Great! Now type `ready` in this channel to begin the setup process. (You have 90 seconds per prompt.)",
@@ -134,7 +138,7 @@ const languageExtras = {
   },
   darija: {
     readyPrompt: "Mzyan! Daba kteb `ready` f had channel bach nbda setup. (3andak 90 seconds f kol prompt.)",
-    setupStart: "Yallah, daba nbda setup. Ghadi nsawlouk 3la b3d IDs. 3afak copier w coller kol wahed mnin ytb3at lik talabat.",
+    setupStart: "Yallah, daba nbda setup. Ghadi nsawlouk 3la b3d IDs. 3afak copier w coller kol wa7ed mnin ytb3at lik talabat.",
     setupComplete: "Choukrane 3la sbr dyalk! L'bot dyalk daba msetab kaml. 🎉",
     intro: "Salam! Ana Franco's Armada 🔱 – l'bot dyalk li kayt3awn m3ak f server b style. Kay3awn f verification, one-tap, modération w ktar. Made by Franco 🔱. Yallah, nbdaw l'mission! ⚓"
   },
@@ -158,14 +162,15 @@ const languageExtras = {
   }
 };
 
-// ==============================
+// ------------------------------
 // Helper Function: Await a Single Message with 90s Timeout
-// ==============================
+// ------------------------------
 async function awaitResponse(channel, userId, prompt, lang) {
   await channel.send(prompt + "\n*(You have 90 seconds to respond, or the setup will time out.)*");
   const filter = m => m.author.id === userId;
   try {
     const collected = await channel.awaitMessages({ filter, max: 1, time: 90000, errors: ['time'] });
+    console.log(`Collected message: ${collected.first().content}`); // Debug log
     return collected.first().content.trim();
   } catch (err) {
     await channel.send(
@@ -179,9 +184,9 @@ async function awaitResponse(channel, userId, prompt, lang) {
   }
 }
 
-// ==============================
+// ------------------------------
 // Interactive Setup Process Function
-// ==============================
+// ------------------------------
 async function runSetup(ownerId, setupChannel, guildId, lang) {
   const config = { serverId: guildId };
   const prompts = languagePrompts[lang];
@@ -210,11 +215,10 @@ async function runSetup(ownerId, setupChannel, guildId, lang) {
   }
 }
 
-// ==============================
+// ------------------------------
 // Slash Commands Setup
-// (Including: /setprefix, /help, and One-Tap commands: /claim, /reject, /kick, /mute, /unmute, /transfer, /name, /status,
-//  as well as admin commands: /toponline, /topvrf, /binfo, /jinfo)
-// ==============================
+// (Includes: /setprefix, /help, One-Tap commands, and Admin commands)
+// ------------------------------
 client.commands = new Collection();
 const slashCommands = [
   new SlashCommandBuilder()
@@ -267,16 +271,16 @@ const slashCommands = [
   }
 })();
 
-// ==============================
+// ------------------------------
 // Client Ready Event
-// ==============================
+// ------------------------------
 client.once(Events.ClientReady, () => {
   console.log(`Logged in as ${client.user.tag}`);
 });
 
-// ==============================
+// ------------------------------
 // Voice State Update Handler (Verification and One-Tap Systems)
-// ==============================
+// ------------------------------
 const verificationSessions = new Map(); // { vcId: { userId, assignedVerificator, rejected } }
 const onetapSessions = new Map();       // { vcId: { owner, rejectedUsers: [], status } }
 
@@ -374,9 +378,33 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
   }
 });
 
-// ==============================
-// Guild Create Event: Create Temporary "bot-setup" Channel & Send Welcome Message
-// ==============================
+// ------------------------------
+// Message Handler for Setup in "bot-setup" Channel
+// ------------------------------
+client.on('messageCreate', async (message) => {
+  if (message.author.bot) return;
+  if (message.channel.name !== 'bot-setup') return;
+  if (message.author.id !== message.guild.ownerId) return;
+  
+  if (message.content.toLowerCase() === 'ready') {
+    const serverConfig = await settingsCollection.findOne({ serverId: message.guild.id });
+    const lang = (serverConfig && serverConfig.language) || "english";
+    await message.channel.send(languageExtras[lang]?.setupStart);
+    try {
+      await runSetup(message.author.id, message.channel, message.guild.id, lang);
+      await message.channel.send(languageExtras[lang]?.setupComplete);
+      setTimeout(() => {
+        message.channel.delete().catch(console.error);
+      }, 5000);
+    } catch (err) {
+      console.error("Setup process error:", err);
+    }
+  }
+});
+
+// ------------------------------
+// Guild Create Event: Create "bot-setup" Channel & Send Welcome Message
+// ------------------------------
 client.on(Events.GuildCreate, async guild => {
   let setupChannel;
   try {
@@ -421,9 +449,9 @@ client.on(Events.GuildCreate, async guild => {
   setupChannel.send({ embeds: [embed], components: [row] });
 });
 
-// ==============================
+// ------------------------------
 // Interaction Handler for Language Buttons and Slash Commands
-// ==============================
+// ------------------------------
 client.on('interactionCreate', async interaction => {
   if (interaction.isButton() && interaction.customId.startsWith("lang_")) {
     const language = interaction.customId.split('_')[1];
@@ -618,7 +646,7 @@ client.on('interactionCreate', async interaction => {
         return interaction.reply({ content: "Failed to set status.", ephemeral: true });
       }
     }
-    // Admin commands:
+    // Admin Commands:
     else if (commandName === 'toponline') {
       return interaction.reply({ content: "Top online users: [Feature coming soon...]", ephemeral: true });
     }
@@ -641,34 +669,10 @@ client.on('interactionCreate', async interaction => {
   }
 });
 
-// ==============================
-// Message Handler for Interactive Setup in "bot-setup" Channel
-// ==============================
-client.on('messageCreate', async (message) => {
-  if (message.author.bot) return;
-  if (message.channel.name !== 'bot-setup') return;
-  if (message.author.id !== message.guild.ownerId) return;
-  
-  if (message.content.toLowerCase() === 'ready') {
-    const serverConfig = await settingsCollection.findOne({ serverId: message.guild.id });
-    const lang = (serverConfig && serverConfig.language) || "english";
-    await message.channel.send(languageExtras[lang]?.setupStart);
-    try {
-      await runSetup(message.author.id, message.channel, message.guild.id, lang);
-      await message.channel.send(languageExtras[lang]?.setupComplete);
-      setTimeout(() => {
-        message.channel.delete().catch(console.error);
-      }, 5000);
-    } catch (err) {
-      console.error("Setup process error:", err);
-    }
-  }
-});
-
-// ==============================
-// Message Handler for Profile Viewer – "R" Command Only
-// (Triggers only if the message is exactly "r" or "r " followed by a mention, but not "ready")
-/* Note: We compare the lowercased message content exactly */
+// ------------------------------
+// Message Handler for "R" Command (Profile Viewer)
+// Triggers only if the message is exactly "r" or "r " followed by a mention (but not "ready")
+// ------------------------------
 client.on('messageCreate', async (message) => {
   if (message.author.bot) return;
   const content = message.content.trim().toLowerCase();
@@ -698,9 +702,9 @@ client.on('messageCreate', async (message) => {
   }
 });
 
-// ==============================
+// ------------------------------
 // Interaction Handler for Profile Viewer Buttons
-// ==============================
+// ------------------------------
 client.on('interactionCreate', async (interaction) => {
   if (!interaction.isButton()) return;
   const [action, userId] = interaction.customId.split('_');
@@ -734,8 +738,8 @@ client.on('interactionCreate', async (interaction) => {
   }
 });
 
-// ==============================
+// ------------------------------
 // Additional Commands (Verification, Jail, etc.) can be added below as needed.
-// ==============================
+// ------------------------------
 
 client.login(process.env.DISCORD_TOKEN);

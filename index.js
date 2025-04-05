@@ -134,12 +134,12 @@ const languageExtras = {
   },
   darija: {
     readyPrompt: "Mzyan! Daba kteb `ready` f had channel bach nbda setup. (3andak 90 seconds f kol prompt.)",
-    setupStart: "Yallah, daba ghanbda setup. Ghadi nsewlek 3la b3d IDs. 3afak copier w coller kol wahed wsifto lia.",
+    setupStart: "Yallah, daba nbda setup. Ghadi nsawlouk 3la b3d IDs. 3afak copier w coller kol wahed mnin ytb3at lik talabat.",
     setupComplete: "Choukrane 3la sbr dyalk! L'bot dyalk daba msetab kaml. 🎉",
     intro: "Salam! Ana Franco's Armada 🔱 – l'bot dyalk li kayt3awn m3ak f server b style. Kay3awn f verification, one-tap, modération w ktar. Made by Franco 🔱. Yallah, nbdaw l'mission! ⚓"
   },
   spanish: {
-    readyPrompt: "Genial! Ahora escribe `ready` en este canal para comenzar el proceso de configuración. (Tienes 90 segundos por mensaje.)",
+    readyPrompt: "¡Genial! Ahora escribe `ready` en este canal para comenzar el proceso de configuración. (Tienes 90 segundos por mensaje.)",
     setupStart: "Muy bien, vamos a comenzar el proceso de configuración. Te pediré una serie de IDs. Por favor, copia y pega cada uno cuando se te pida.",
     setupComplete: "¡Gracias por tu paciencia! Tu bot ya está completamente configurado. 🎉",
     intro: "¡Hola! Soy Franco's Armada 🔱 – tu bot versátil para gestionar el servidor. Puedo ayudar con verificación, canales de voz one-tap, moderación y más. Made by Franco 🔱. ¡Empecemos! ⚓"
@@ -170,7 +170,7 @@ async function awaitResponse(channel, userId, prompt, lang) {
   } catch (err) {
     await channel.send(
       (lang === "english" && "Setup timed out 🤷‍♂️. Please type `ready` to start the setup again.") ||
-      (lang === "darija" && "# Sala lw9t hh 🤷‍♂️. Kteb `ready` bach tbda men jdid.") ||
+      (lang === "darija" && "Setup t9llat 🤷‍♂️. Kteb `ready` bach tbda men jdod.") ||
       (lang === "spanish" && "El tiempo de configuración ha expirado 🤷‍♂️. Por favor, escribe `ready` para reiniciar el proceso.") ||
       (lang === "russian" && "Время на настройку истекло 🤷‍♂️. Пожалуйста, введите `ready`, чтобы начать заново.") ||
       (lang === "french" && "Le délai de configuration a expiré 🤷‍♂️. Veuillez taper `ready` pour recommencer.")
@@ -202,7 +202,7 @@ async function runSetup(ownerId, setupChannel, guildId, lang) {
     console.error("Error saving configuration:", err);
     await setupChannel.send(
       (lang === "english" && "There was an error saving your configuration. Please try again or contact support.") ||
-      (lang === "darija" && "Chi mouchkil f saving configuration. 3awd 7awl awla twasel m3a l'support.") ||
+      (lang === "darija" && "Chi mouchkil f saving configuration. 3awd 7awl awla t3ayet l'support.") ||
       (lang === "spanish" && "Hubo un error al guardar la configuración. Por favor, inténtalo de nuevo o contacta al soporte.") ||
       (lang === "russian" && "Произошла ошибка при сохранении настроек. Пожалуйста, попробуйте снова или свяжитесь со службой поддержки.") ||
       (lang === "french" && "Une erreur est survenue lors de l'enregistrement de votre configuration. Veuillez réessayer ou contacter le support.")
@@ -217,13 +217,11 @@ async function runSetup(ownerId, setupChannel, guildId, lang) {
 // ==============================
 client.commands = new Collection();
 const slashCommands = [
-  // Customization command:
   new SlashCommandBuilder()
     .setName('setprefix')
     .setDescription('Set a custom prefix for this server')
     .addStringOption(option => option.setName('prefix').setDescription('New prefix').setRequired(true)),
 
-  // One-Tap management commands:
   new SlashCommandBuilder().setName('claim').setDescription('Claim ownership of your tap'),
   new SlashCommandBuilder().setName('reject').setDescription('Reject a user from joining your tap')
     .addUserOption(option => option.setName('target').setDescription('User to reject').setRequired(true)),
@@ -240,7 +238,6 @@ const slashCommands = [
   new SlashCommandBuilder().setName('status').setDescription('Set a status for your tap')
     .addStringOption(option => option.setName('text').setDescription('Status text').setRequired(true)),
 
-  // Admin/statistics commands:
   new SlashCommandBuilder().setName('toponline').setDescription('Show most online users')
     .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
   new SlashCommandBuilder().setName('topvrf').setDescription('Show top verificators')
@@ -253,7 +250,6 @@ const slashCommands = [
     .addStringOption(option => option.setName('userid').setDescription('User ID').setRequired(true))
     .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
 
-  // Help command:
   new SlashCommandBuilder().setName('help').setDescription('Show available commands')
 ];
 
@@ -293,14 +289,14 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
       const member = newState.member;
       const tempVC = await guild.channels.create({
         name: `Verify - ${member.displayName}`,
-        type: 2, // Voice channel.
+        type: 2,
         parent: newState.channel.parentId,
         permissionOverwrites: [] // Configure as needed.
       });
       console.log(`Created verification VC: ${tempVC.name} for ${member.displayName}`);
       await member.voice.setChannel(tempVC);
       verificationSessions.set(tempVC.id, { userId: member.id, assignedVerificator: null, rejected: false });
-      // Send a pop-up message in the designated alert channel.
+      // Send a pop-up message in the alert channel.
       const alertChannel = guild.channels.cache.get(process.env.CHANNEL_VERIFICATION_ALERT);
       if (alertChannel) {
         const joinButton = new ButtonBuilder()
@@ -387,7 +383,7 @@ client.on(Events.GuildCreate, async guild => {
   try {
     setupChannel = await guild.channels.create({
       name: 'bot-setup',
-      type: 0, // Text channel.
+      type: 0,
       topic: 'Use this channel to configure the bot. It will be deleted after setup is complete.',
       permissionOverwrites: [
         { id: guild.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] }
@@ -414,7 +410,6 @@ client.on(Events.GuildCreate, async guild => {
       languageExtras.english.intro + "\n\n" +
       "Before we set sail, please choose your language by clicking one of the buttons below.\n" +
       "Then, I'll guide you through a step-by-step configuration to set up the following IDs:\n" +
-      
       "• Verified Role ID\n" +
       "• Unverified Role ID\n" +
       "• Verified Girl Role ID\n" +
@@ -424,7 +419,6 @@ client.on(Events.GuildCreate, async guild => {
       "• Verification Alert Channel ID\n" +
       "• Jail Role ID\n" +
       "• Voice Jail Channel ID\n\n" +
-      
       "Once setup is complete, this channel will be automatically deleted.\n" +
       "Made by Franco (YOUR_USER_ID_HERE) • Type `/help` for a list of commands. Let's set sail together! ⚓"
     );
@@ -437,7 +431,7 @@ client.on(Events.GuildCreate, async guild => {
 client.on('interactionCreate', async interaction => {
   // Handle language selection buttons.
   if (interaction.isButton() && interaction.customId.startsWith("lang_")) {
-    const language = interaction.customId.split('_')[1]; // e.g., "english", "darija", etc.
+    const language = interaction.customId.split('_')[1];
     let confirmationMessage = "";
     switch (language) {
       case "english":
@@ -473,7 +467,7 @@ client.on('interactionCreate', async interaction => {
     const readyPrompt = languageExtras[language]?.readyPrompt || "Now type `ready` to begin the setup process.";
     await interaction.channel.send(readyPrompt);
   }
-  // Slash command handler for /setprefix, /help, and other commands.
+  // Slash command handler.
   else if (interaction.isChatInputCommand()) {
     const { commandName } = interaction;
     if (commandName === 'setprefix') {
@@ -500,7 +494,7 @@ client.on('interactionCreate', async interaction => {
           { name: "Profile Viewer", value: "`r` → View your profile picture (with Avatar/Banner buttons)", inline: false },
           { name: "Customization", value: "`/setprefix` → Set your custom command prefix", inline: false },
           { name: "One-Tap Commands", value: "`/claim`, `/reject`, `/kick`, `/mute`, `/unmute`, `/transfer`, `/name`, `/status`", inline: false },
-          { name: "Admin Commands", value: "`/toponline`, `/topvrf`, `/binfo`, `/jinfo`", inline: false },
+          { name: "Admin Commands", value: "`/toponline`, `/topvrf`, `/binfo`, `/jinfo`", inline: false }
         );
       return interaction.reply({ embeds: [helpEmbed], ephemeral: true });
     }
@@ -681,189 +675,14 @@ client.on('messageCreate', async (message) => {
 
 // ==============================
 // Message Handler for Profile Viewer – "R" Command Only
+// (Modified so that it triggers only if the message is exactly "r" or "r " followed by a mention)
 // ==============================
 client.on('messageCreate', async (message) => {
   if (message.author.bot) return;
-  const content = message.content.trim();
-  if (content.toLowerCase().startsWith('r')) {
-    let targetUser = message.mentions.users.first() || message.author;
-    try {
-      targetUser = await targetUser.fetch();
-    } catch (err) {
-      console.error("Error fetching user data:", err);
-      return message.reply("Error fetching user data.");
-    }
-    const embed = new EmbedBuilder()
-      .setColor(0x0099ff)
-      .setTitle(`${targetUser.username}'s Profile Picture`)
-      .setDescription("Click a button below to view Avatar or Banner.")
-      .setThumbnail(targetUser.displayAvatarURL({ dynamic: true, size: 1024 }));
-    const avatarButton = new ButtonBuilder()
-      .setCustomId(`avatar_${targetUser.id}`)
-      .setLabel("Avatar")
-      .setStyle(ButtonStyle.Primary);
-    const bannerButton = new ButtonBuilder()
-      .setCustomId(`banner_${targetUser.id}`)
-      .setLabel("Banner")
-      .setStyle(ButtonStyle.Secondary);
-    const row = new ActionRowBuilder().addComponents(avatarButton, bannerButton);
-    message.channel.send({ embeds: [embed], components: [row] });
-  }
-});
-
-// ==============================
-// Interaction Handler for Profile Viewer Buttons
-// ==============================
-client.on('interactionCreate', async (interaction) => {
-  if (!interaction.isButton()) return;
-  const [action, userId] = interaction.customId.split('_');
-  if (!userId) return;
-  let targetUser;
-  try {
-    targetUser = await client.users.fetch(userId, { force: true });
-  } catch (err) {
-    console.error("Error fetching user for profile:", err);
-    return interaction.reply({ content: "Error fetching user data.", ephemeral: true });
-  }
-  if (action === 'avatar') {
-    const avatarURL = targetUser.displayAvatarURL({ dynamic: true, size: 1024 });
-    const embed = new EmbedBuilder()
-      .setColor(0x00AE86)
-      .setTitle(`${targetUser.username}'s Avatar`)
-      .setImage(avatarURL)
-      .setFooter({ text: `Requested by: ${interaction.user.username}` });
-    return interaction.update({ embeds: [embed] });
-  } else if (action === 'banner') {
-    const bannerURL = targetUser.bannerURL({ dynamic: true, size: 1024 });
-    if (!bannerURL) {
-      return interaction.reply({ content: "This user does not have a banner set.", ephemeral: true });
-    }
-    const embed = new EmbedBuilder()
-      .setColor(0x00AE86)
-      .setTitle(`${targetUser.username}'s Banner`)
-      .setImage(bannerURL)
-      .setFooter({ text: `Requested by: ${interaction.user.username}` });
-    return interaction.update({ embeds: [embed] });
-  }
-});
-
-// ==============================
-// Verification Commands (Example: +boy / +girl)
-// ==============================
-client.on('messageCreate', async (message) => {
-  if (message.author.bot) return;
+  const content = message.content.trim().toLowerCase();
   
-  if (message.content.startsWith('+boy') || message.content.startsWith('+girl')) {
-    let sessionId;
-    for (const [vcId, session] of verificationSessions.entries()) {
-      if (message.member.voice.channelId === vcId) {
-        if (!session.assignedVerificator) {
-          session.assignedVerificator = message.author.id;
-          verificationSessions.set(vcId, session);
-        }
-        if (session.assignedVerificator === message.author.id) {
-          sessionId = vcId;
-          break;
-        }
-      }
-    }
-    if (!sessionId) {
-      return message.reply("No active verification session found for you.");
-    }
-    const session = verificationSessions.get(sessionId);
-    const memberToVerify = message.guild.members.cache.get(session.userId);
-    if (!memberToVerify) return message.reply("User not found.");
-    try {
-      await memberToVerify.roles.remove(process.env.ROLE_UNVERIFIED);
-      let verifiedRoleName;
-      if (message.content.startsWith('+boy')) {
-        await memberToVerify.roles.add(process.env.ROLE_VERIFIED_BOY);
-        verifiedRoleName = "Verified Boy";
-      } else {
-        await memberToVerify.roles.add(process.env.ROLE_VERIFIED_GIRL);
-        verifiedRoleName = "Verified Girl";
-      }
-      // Determine language for welcome DM.
-      const serverConfig = await settingsCollection.findOne({ serverId: message.guild.id });
-      const lang = (serverConfig && serverConfig.language) || "english";
-      const verificationWelcome = {
-        english: "No Toxic Guys Here ❌️☢️. We're here to chill and enjoy our time. Welcome again! 🌸❤️",
-        darija: "Bla Toxicity ❌️☢️. Hna bash nrelaxiw w nstmt3o bw9tna. Marhba bik men jdid! 🌸❤️",
-        spanish: "No toxic, chicos ❌️☢️. Estamos aquí para relajarnos y disfrutar. ¡Bienvenidos de nuevo! 🌸❤️",
-        russian: "Никакого токсика, ребята ❌️☢️. Мы здесь, чтобы расслабиться и насладиться временем. Снова добро пожаловать! 🌸❤️",
-        french: "Pas de toxicité, les gars ❌️☢️. Nous sommes ici pour nous détendre et profiter du temps. Bienvenue à nouveau! 🌸❤️"
-      };
-      const welcomeDM = verificationWelcome[lang] || verificationWelcome.english;
-      await memberToVerify.send(welcomeDM);
-      message.channel.send(`<@${memberToVerify.id}> was verified as ${verifiedRoleName} successfully!`);
-      setTimeout(async () => {
-        const verifVC = message.guild.channels.cache.get(sessionId);
-        if (verifVC) {
-          if (verifVC.members.size === 0 || (verifVC.members.size === 1 && verifVC.members.has(message.author.id))) {
-            await verifVC.delete().catch(() => {});
-            verificationSessions.delete(sessionId);
-          }
-        }
-      }, 30000);
-      return message.reply("Verification complete.");
-    } catch (err) {
-      console.error("Verification error:", err);
-      return message.reply("Verification failed.");
-    }
-  }
-  
-  // Jail Commands (Example: +jail, +unjail)
-  if (message.content.startsWith('+jail')) {
-    if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-      return message.reply("You don't have permission to use this command.");
-    }
-    const args = message.content.split(' ');
-    if (args.length < 3) return message.reply("Usage: +jail <userID> <reason>");
-    const targetId = args[1];
-    const reason = args.slice(2).join(' ');
-    const targetMember = message.guild.members.cache.get(targetId);
-    if (!targetMember) return message.reply("User not found.");
-    try {
-      const rolesToRemove = targetMember.roles.cache
-        .filter(role => role.id !== targetMember.guild.id)
-        .map(role => role.id);
-      await targetMember.roles.remove(rolesToRemove, "Jailed: Removing all roles");
-      await targetMember.roles.add(process.env.ROLE_JAILED);
-      const jailVC = message.guild.channels.cache.get(process.env.VOICE_JAIL);
-      if (jailVC) await targetMember.voice.setChannel(jailVC);
-      message.channel.send(`User ${targetMember.displayName} has been jailed.`);
-    } catch (err) {
-      console.error("Jail error:", err);
-      return message.reply("Failed to jail the user.");
-    }
-  }
-  
-  if (message.content.startsWith('+unjail')) {
-    if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-      return message.reply("You don't have permission to use this command.");
-    }
-    const args = message.content.split(' ');
-    if (args.length < 2) return message.reply("Usage: +unjail <userID>");
-    const targetId = args[1];
-    const targetMember = message.guild.members.cache.get(targetId);
-    if (!targetMember) return message.reply("User not found.");
-    try {
-      await targetMember.roles.remove(process.env.ROLE_JAILED);
-      message.channel.send(`User ${targetMember.displayName} has been unjailed.`);
-    } catch (err) {
-      console.error("Unjail error:", err);
-      return message.reply("Failed to unjail the user.");
-    }
-  }
-});
-
-// ==============================
-// Message Handler for Profile Viewer – "R" Command Only
-// ==============================
-client.on('messageCreate', async (message) => {
-  if (message.author.bot) return;
-  const content = message.content.trim();
-  if (content.toLowerCase().startsWith('r')) {
+  // Check if the message is exactly "r" or starts with "r " (and is not "ready")
+  if ((content === 'r' || content.startsWith('r ')) && content !== 'ready') {
     let targetUser = message.mentions.users.first() || message.author;
     try {
       targetUser = await targetUser.fetch();

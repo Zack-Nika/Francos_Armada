@@ -2,7 +2,408 @@
 // Franco's Armada Bot – A fully featured rental bot with interactive, multilingual per‑server setup.
 // FEATURES:
 // • Connects to MongoDB to store per‑server settings (language, custom prefix, role/channel IDs, custom welcome message).
-// • When joining a server, creates a temporary "bot-setup" channel with language selection buttons for interactive setup.
+// • When joini// index.js
+require('dotenv').config();
+const {
+  Client,
+  GatewayIntentBits,
+  Partials,
+  Collection,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  EmbedBuilder,
+  Events,
+  REST,
+  Routes,
+  SlashCommandBuilder,
+  PermissionsBitField
+} = require('discord.js');
+const { MongoClient } = require('mongodb');
+const { createCanvas, loadImage } = require('@napi-rs/canvas');
+
+// -----------------------------------
+// MongoDB Setup
+// -----------------------------------
+const mongoUri = process.env.MONGODB_URI;
+const mongoClient = new MongoClient(mongoUri);
+let settingsCollection;
+async function connectToMongo() {
+  try {
+    await mongoClient.connect();
+    console.log("Connected to MongoDB");
+    const db = mongoClient.db("botRentalDB");
+    settingsCollection = db.collection("serverSettings");
+  } catch (err) {
+    console.error("MongoDB connection error:", err);
+  }
+}
+connectToMongo();
+
+// -----------------------------------
+// Discord Client
+// -----------------------------------
+const client = new Client({
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.GuildVoiceStates,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent,
+    GatewayIntentBits.DirectMessages
+  ],
+  partials: [Partials.Channel]
+});
+
+// Prevent multiple setups
+const setupStarted = new Map();
+
+// -----------------------------------
+// Language Data
+// (same as before; omitted for brevity, but keep your languagePrompts, languageExtras, etc.)
+// -----------------------------------
+const languagePrompts = { /* ...unchanged... */ };
+const languageExtras = { /* ...unchanged... */ };
+
+// -----------------------------------
+// Helper: Await Single Message
+// -----------------------------------
+async function awaitResponse(channel, userId, prompt, lang) {
+  await channel.send(prompt + "\n*(90 seconds to respond, or setup times out.)*");
+  const filter = m => m.author.id === userId;
+  try {
+    const collected = await channel.awaitMessages({ filter, max: 1, time: 90000, errors: ['time'] });
+    console.log(`Collected message: ${collected.first().content}`);
+    return collected.first().content.trim();
+  } catch (err) {
+    await channel.send(
+      (lang === "english" && "Setup timed out 🤷‍♂️. Type `ready` to restart setup.") ||
+      (lang === "darija" && "Setup t9llat 🤷‍♂️. Kteb `ready` bach tbda men jdod.") ||
+      // ...and so on for other languages...
+      "Setup timed out. Type `ready` to restart setup."
+    );
+    throw new Error("Setup timed out");
+  }
+}
+
+// -----------------------------------
+// runSetup Function
+// -----------------------------------
+async function runSetup(ownerId, setupChannel, guildId, lang) {
+  const config = { serverId: guildId };
+  const prompts = languagePrompts[lang] || languagePrompts.english;
+  const promptEntries = Object.entries(prompts);
+
+  await setupChannel.send(languageExtras[lang]?.setupStart || languageExtras.english.setupStart);
+  for (const [key, prompt] of promptEntries) {
+    const response = await awaitResponse(setupChannel, ownerId, prompt, lang);
+    config[key] = (response.toLowerCase() === "none") ? null : response;
+  }
+  try {
+    await settingsCollection.updateOne({ serverId: guildId }, { $set: config }, { upsert: true });
+    await setupChannel.send(languageExtras[lang]?.setupComplete || languageExtras.english.setupComplete);
+  } catch (err) {
+    console.error("Error saving configuration:", err);
+    await setupChannel.send("Error saving configuration. Try again or contact support.");
+  }
+}
+
+// -----------------------------------
+// Slash Commands Setup
+// -----------------------------------
+client.commands = new Collection();
+const slashCommands = [
+  new SlashCommandBuilder()
+    .setName('setprefix')
+    .setDescription('Set a custom prefix for this server')
+    .addStringOption(opt => opt.setName('prefix').setDescription('New prefix').setRequired(true)),
+  
+  // Remove defaultMemberPermissions so you can see them in the slash menu:
+  new SlashCommandBuilder()
+    .setName('setwelcome')
+    .setDescription('Set a custom welcome message for new members')
+    .addStringOption(opt => opt.setName('message').setDescription('The welcome message').setRequired(true)),
+  new SlashCommandBuilder()
+    .setName('showwelcome')
+    .setDescription('Show the current custom welcome message'),
+
+  new SlashCommandBuilder().setName('topvrf').setDescription('Show top verificators'),
+  new SlashCommandBuilder().setName('binfo').setDescription('Show total bans'),
+  new SlashCommandBuilder()
+    .setName('jinfo')
+    .setDescription('Show jail info for a user')
+    .addStringOption(opt => opt.setName('userid').setDescription('User ID').setRequired(true)),
+  new SlashCommandBuilder().setName('toponline').setDescription('Show most online users'),
+  new SlashCommandBuilder().setName('topmembers').setDescription('Show top members by activity'),
+  
+  new SlashCommandBuilder().setName('claim').setDescription('Claim ownership of your tap'),
+  new SlashCommandBuilder().setName('reject').setDescription('Reject a user from joining your tap')
+    .addUserOption(opt => opt.setName('target').setDescription('User to reject').setRequired(true)),
+  new SlashCommandBuilder().setName('kick').setDescription('Kick a user from your tap')
+    .addUserOption(opt => opt.setName('target').setDescription('User to kick').setRequired(true)),
+  new SlashCommandBuilder().setName('mute').setDescription('Mute a user in your voice channel')
+    .addUserOption(opt => opt.setName('target').setDescription('User to mute').setRequired(true)),
+  new SlashCommandBuilder().setName('unmute').setDescription('Unmute a user in your voice channel')
+    .addUserOption(opt => opt.setName('target').setDescription('User to unmute').setRequired(true)),
+  new SlashCommandBuilder().setName('transfer').setDescription('Transfer ownership of your tap')
+    .addUserOption(opt => opt.setName('target').setDescription('User to transfer ownership to').setRequired(true)),
+  new SlashCommandBuilder().setName('name').setDescription('Rename your tap')
+    .addStringOption(opt => opt.setName('text').setDescription('New channel name').setRequired(true)),
+  new SlashCommandBuilder().setName('status').setDescription('Set a status for your tap')
+    .addStringOption(opt => opt.setName('text').setDescription('Status text').setRequired(true)),
+
+  new SlashCommandBuilder().setName('help').setDescription('Show available commands')
+];
+
+(async () => {
+  const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
+  try {
+    console.log('Refreshing slash commands...');
+    await rest.put(
+      Routes.applicationGuildCommands(process.env.CLIENT_ID, process.env.GUILD_ID),
+      { body: slashCommands.map(cmd => cmd.toJSON()) }
+    );
+    console.log('Slash commands reloaded.');
+  } catch (error) {
+    console.error(error);
+  }
+})();
+
+// -----------------------------------
+// Create the Discord Client
+// -----------------------------------
+client.once(Events.ClientReady, () => {
+  console.log(`Logged in as ${client.user.tag}`);
+});
+
+// -----------------------------------
+// Handle Language Buttons
+// -----------------------------------
+client.on('interactionCreate', async (interaction) => {
+  if (interaction.isButton() && interaction.customId.startsWith("lang_")) {
+    const langChosen = interaction.customId.split('_')[1];
+    try {
+      await settingsCollection.updateOne(
+        { serverId: interaction.guild.id },
+        { $set: { language: langChosen } },
+        { upsert: true }
+      );
+      await interaction.reply({ content: `Language set to ${langChosen}!`, ephemeral: true });
+      await interaction.channel.send("Now type `ready` to begin the setup process.");
+    } catch (err) {
+      console.error("Error setting language:", err);
+      await interaction.reply({ content: "Error setting language.", ephemeral: true });
+    }
+  }
+});
+
+// -----------------------------------
+// "Ready" Handler for Setup
+// -----------------------------------
+client.on('messageCreate', async (message) => {
+  if (message.author.bot) return;
+  // For debugging, log the channel name:
+  console.log(`Message from ${message.author.tag} in #${message.channel.name}: ${message.content}`);
+
+  // If you want to restrict it to the "bot-setup" channel:
+  if (message.channel.name !== 'bot-setup') return;
+  
+  // Only the server owner can trigger
+  if (message.author.id !== message.guild.ownerId) return;
+
+  if (message.content.toLowerCase() === 'ready') {
+    console.log(`"ready" triggered by ${message.author.tag} in guild ${message.guild.name}`);
+    if (setupStarted.get(message.guild.id)) {
+      console.log("Setup already started. Ignoring.");
+      return;
+    }
+    setupStarted.set(message.guild.id, true);
+
+    // Grab language from DB
+    const serverConfig = await settingsCollection.findOne({ serverId: message.guild.id });
+    const lang = (serverConfig && serverConfig.language) || "english";
+
+    await message.channel.send(languageExtras[lang]?.setupStart || languageExtras.english.setupStart);
+    try {
+      await runSetup(message.author.id, message.channel, message.guild.id, lang);
+      setTimeout(() => {
+        message.channel.delete().catch(console.error);
+      }, 5000);
+    } catch (err) {
+      console.error("Setup process error:", err);
+    }
+  }
+});
+
+// -----------------------------------
+// Slash Commands: One-tap, setwelcome, etc.
+// (Same as before, just ensuring no defaultMemberPermissions so you can see them.)
+// -----------------------------------
+client.on('interactionCreate', async (interaction) => {
+  if (!interaction.isChatInputCommand()) return;
+
+  const config = await settingsCollection.findOne({ serverId: interaction.guild.id });
+  const isAdmin = interaction.member.permissions.has(PermissionsBitField.Flags.Administrator);
+  const isOwner = (interaction.member.id === interaction.guild.ownerId);
+  const hasVerified = config && (
+    interaction.member.roles.cache.has(config.verifiedRoleId) ||
+    interaction.member.roles.cache.has(config.verifiedGirlRoleId)
+  );
+  const hasVerificator = config && interaction.member.roles.cache.has(config.verificatorRoleId);
+
+  const { commandName } = interaction;
+  if (commandName === 'setprefix') {
+    const newPrefix = interaction.options.getString('prefix');
+    try {
+      await settingsCollection.updateOne(
+        { serverId: interaction.guild.id },
+        { $set: { prefix: newPrefix } },
+        { upsert: true }
+      );
+      return interaction.reply({ content: `Prefix updated to \`${newPrefix}\`!`, ephemeral: true });
+    } catch (err) {
+      console.error(err);
+      return interaction.reply({ content: "Error updating prefix.", ephemeral: true });
+    }
+  }
+  else if (commandName === 'setwelcome') {
+    // Let them see the command but only let it run if admin or owner:
+    if (!isAdmin && !isOwner) {
+      return interaction.reply({ content: "Only admins or the server owner can set the welcome message.", ephemeral: true });
+    }
+    const newMsg = interaction.options.getString('message');
+    try {
+      await settingsCollection.updateOne(
+        { serverId: interaction.guild.id },
+        { $set: { customWelcome: newMsg } },
+        { upsert: true }
+      );
+      return interaction.reply({ content: "Custom welcome message updated!", ephemeral: true });
+    } catch (err) {
+      console.error(err);
+      return interaction.reply({ content: "Failed to update welcome message.", ephemeral: true });
+    }
+  }
+  else if (commandName === 'showwelcome') {
+    try {
+      const cfg = await settingsCollection.findOne({ serverId: interaction.guild.id });
+      const wMsg = cfg?.customWelcome || "No custom welcome message set.";
+      return interaction.reply({ content: `Current welcome message: ${wMsg}`, ephemeral: true });
+    } catch (err) {
+      console.error(err);
+      return interaction.reply({ content: "Failed to fetch welcome message.", ephemeral: true });
+    }
+  }
+  else if (commandName === 'topvrf') {
+    // Only admin, owner, or verificator
+    if (!isAdmin && !isOwner && !hasVerificator) {
+      return interaction.reply({ content: "No permission to use /topvrf", ephemeral: true });
+    }
+    return interaction.reply({ content: "Top verificators: [Coming soon...]", ephemeral: true });
+  }
+  else if (commandName === 'binfo') {
+    if (!isAdmin) return interaction.reply({ content: "Only admins can use /binfo", ephemeral: true });
+    try {
+      const bans = await interaction.guild.bans.fetch();
+      return interaction.reply({ content: `Total bans: ${bans.size}`, ephemeral: true });
+    } catch (err) {
+      console.error(err);
+      return interaction.reply({ content: "Failed to fetch ban info.", ephemeral: true });
+    }
+  }
+  else if (commandName === 'jinfo') {
+    if (!isAdmin) return interaction.reply({ content: "Only admins can use /jinfo", ephemeral: true });
+    const userId = interaction.options.getString('userid');
+    return interaction.reply({ content: `Jail info for user ${userId}: [Coming soon...]`, ephemeral: true });
+  }
+  else if (commandName === 'toponline' || commandName === 'topmembers') {
+    if (!isAdmin && !isOwner && !hasVerified) {
+      return interaction.reply({ content: "No permission to see top stats.", ephemeral: true });
+    }
+    return interaction.reply({ content: `${commandName} is [Coming soon...]`, ephemeral: true });
+  }
+  // One-tap commands, etc. remain basically the same.
+  // ...
+  else if (commandName === 'help') {
+    const helpEmbed = new EmbedBuilder()
+      .setColor(0xFF69B4)
+      .setTitle("Available Commands")
+      .setDescription("Use these commands to configure and manage your bot.")
+      .addFields(
+        { name: "Profile Viewer", value: "`r` → View your profile (Avatar/Banner)", inline: false },
+        { name: "Customization", value: "`/setprefix`, `/setwelcome`, `/showwelcome`", inline: false },
+        { name: "One-Tap", value: "`/claim`, `/reject`, `/kick`, `/mute`, `/unmute`, `/transfer`, `/name`, `/status`", inline: false },
+        { name: "Dashboard", value: "`/topvrf`, `/binfo`, `/jinfo`, `/toponline`, `/topmembers`", inline: false }
+      );
+    return interaction.reply({ embeds: [helpEmbed], ephemeral: true });
+  }
+});
+
+// -----------------------------------
+// Voice State Update: Verification Changes
+//  - No notification if the joiner is a verificator alone
+//  - Only 1 unverified user + 1 verificator
+// -----------------------------------
+const verificationSessions = new Map();
+const onetapSessions = new Map();
+
+client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
+  const guild = newState.guild || oldState.guild;
+  const config = await settingsCollection.findOne({ serverId: guild.id });
+  if (!config) return;
+
+  // If user joined the verification channel:
+  if (newState.channelId === config.voiceVerificationChannelId) {
+    try {
+      // Check if user is unverified
+      const member = newState.member;
+      const unverifiedRole = guild.roles.cache.get(config.unverifiedRoleId);
+      if (!unverifiedRole || !member.roles.cache.has(unverifiedRole.id)) {
+        // Means the user is not unverified => skip (no notification)
+        console.log(`${member.displayName} joined verification but is NOT unverified => skip notification`);
+        return;
+      }
+      // If user is unverified, create a new VC
+      const tempVC = await guild.channels.create({
+        name: `Verify - ${member.displayName}`,
+        type: 2,
+        parent: newState.channel.parentId,
+        userLimit: 2,  // Only 2 slots: 1 unverified + 1 verificator
+        permissionOverwrites: []
+      });
+      console.log(`Created verification VC for unverified user: ${member.displayName}`);
+      await member.voice.setChannel(tempVC);
+      verificationSessions.set(tempVC.id, { userId: member.id, assignedVerificator: null, rejected: false });
+
+      // Send pop-up
+      const alertChannel = guild.channels.cache.get(config.verificationAlertChannelId);
+      if (alertChannel) {
+        const joinButton = new ButtonBuilder()
+          .setCustomId(`join_verification_${tempVC.id}`)
+          .setLabel("Join Verification")
+          .setStyle(ButtonStyle.Primary);
+        const row = new ActionRowBuilder().addComponents(joinButton);
+        // Title changed to big bold text "New Member Ajew 🙋"
+        const alertEmbed = new EmbedBuilder()
+          .setTitle("## New Member Ajew 🙋")  // Big bold text
+          .setColor(0x00AE86);
+        await alertChannel.send({ embeds: [alertEmbed], components: [row] });
+      }
+    } catch (err) {
+      console.error("Error creating verification VC:", err);
+    }
+  }
+
+  // If user joined the one-tap channel => etc. (unchanged)...
+
+  // ...the rest of your logic for reassign, auto-delete, etc.
+});
+
+// -----------------------------------
+// Client Login
+// -----------------------------------
+client.login(process.env.DISCORD_TOKEN);
+ng a server, creates a temporary "bot-setup" channel with language selection buttons for interactive setup.
 // • Assigns new members the unverified role and DMs them a welcome message (using a custom welcome if set).
 // • Creates a permanent "bot-config" channel for later configuration (e.g. updating prefix or welcome message).
 // • Implements voice state handling for verification (temporary VC creation with a pop-up alert) and a fixed one‑tap channel.
@@ -643,7 +1044,7 @@ client.on(Events.GuildCreate, async guild => {
       "• Jail Role ID\n" +
       "• Voice Jail Channel ID\n\n" +
       "Once setup is complete, this channel will be automatically deleted.\n" +
-      "Made by Franco (YOUR_USER_ID_HERE) • Type `/help` for a list of commands. Let's set sail together! ⚓"
+      "Made by Franco 🔱 • Type `/help` for a list of commands. Let's set sail together! ⚓"
     );
   setupChannel.send({ embeds: [embed], components: [row] });
 });
@@ -777,7 +1178,7 @@ client.on('messageCreate', async (message) => {
       }
       const verificationWelcome = {
         english: "No Toxic Guys Here ❌️☢️. We're here to chill and enjoy our time. Welcome again! 🌸❤️",
-        darija: "Ma kaynach toxic shabab ❌️☢️. Hna bash nrelaxiw w njibou mzyan waqtna. Marhba bik men jdid! 🌸❤️",
+        darija: "Ma kaynach toxic shabab ❌️☢️. Hna bash nchilliw wnstemt3o mzyan waqtna. Marhba bik mn jdid! 🌸❤️",
         spanish: "No toxic, chicos ❌️☢️. Estamos aquí para relajarnos y disfrutar. ¡Bienvenidos de nuevo! 🌸❤️",
         russian: "Никакого токсика, ребята ❌️☢️. Мы здесь, чтобы расслабиться и насладиться временем. Снова добро пожаловать! 🌸❤️",
         french: "Pas de toxicité, les gars ❌️☢️. Nous sommes ici pour nous détendre et profiter du temps. Bienvenue à nouveau! 🌸❤️"

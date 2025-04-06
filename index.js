@@ -499,7 +499,7 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
         const row = new ActionRowBuilder().addComponents(joinButton);
         // Pop-up title updated:
         const alertEmbed = new EmbedBuilder()
-          .setTitle("## New Member as You 🙋")
+          .setTitle("# New Member as You 🙋")
           .setColor(0x00AE86);
         await alertChannel.send({ embeds: [alertEmbed], components: [row] });
       } else {

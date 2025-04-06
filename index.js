@@ -1,23 +1,23 @@
 // index.js
-// Franco's Armada Bot – Final Complete Code
+// Franco's Armada Bot – Final Complete Code (Updated Owner Fetch)
 // FEATURES:
 // • Connects to MongoDB to store per‑server settings (language, prefix, role/channel IDs, custom welcome message).
-// • On guild join, creates a temporary "bot-setup" channel and a permanent "bot-config" channel visible only to the owner.
+// • On guild join, creates a temporary "bot‑setup" channel and a permanent "bot‑config" channel visible only to the owner.
 // • New members are assigned the unverified role and sent a welcome DM that tags them.
-// • Interactive multi‑language setup (English, Darija, Spanish, Russian, French) is triggered by the owner typing “ready” in the bot-setup channel.
+// • Interactive multi‑language setup (English, Darija, Spanish, Russian, French) is triggered by the owner typing “ready” in the bot‑setup channel.
 // • Verification Process:
 //     – When an unverified user joins the permanent verification channel (config.voiceVerificationChannelId),
 //       the bot creates an ephemeral VC named "Verify – [displayName]" (userLimit: 2) and moves them there.
 //     – It then sends a plain‑text notification (“# New Member Ajew 🙋‍♂️”) plus a "Join Verification" button in the alert channel.
-//     – Verificators (no mention needed) click the button to join the ephemeral VC (or get an invite if not in voice).
-//     – In that VC, the verificator types "+boy" or "+girl" to verify the user, which removes the unverified role and adds the corresponding verified role.
+//     – Verificators (who type “+boy” or “+girl” without mentioning the user) verify the user by removing the unverified role and adding the appropriate verified role.
 //     – When the verificator leaves, the bot moves the verified user to the nearest open VC.
 // • One‑Tap Process:
-//     – When a verified user joins the designated one‑tap channel (config.oneTapChannelId), the bot creates an ephemeral personal VC named "[displayName]'s Room".
-//     – The channel is created with a permission overwrite that denies VIEW_CHANNEL and CONNECT for the unverified role, making it open only to verified members.
-//     – The channel auto‑deletes when empty.
-// • Global slash commands are registered (e.g. /setprefix, /setwelcome, /help, plus one‑tap commands such as /claim, /mute, /unmute, /lock, /unlock, /limit, /reject, /perm, /hide, /unhide, /transfer, /name, /status).
-// • The "R" message command displays a user's profile picture with buttons for Avatar and Banner.
+//     – When a verified user joins the designated one‑tap channel (config.oneTapChannelId), the bot creates an ephemeral VC named "[displayName]'s Room".
+//     – This VC is created with an extra permission overwrite that denies VIEW_CHANNEL and CONNECT for the unverified role so that unverified users can’t see it.
+//     – The room is open by default and auto‑deletes when empty.
+// • Global slash commands (e.g. /setprefix, /setwelcome, /help, plus one‑tap commands such as /claim, /mute, /unmute, /lock, /unlock, /limit, /reject, /perm, /hide, /unhide, /transfer, /name, /status) and the "R" message command for profile viewing are provided.
+// • The "bot‑setup" and "bot‑config" channels are created so that only the owner can see them.
+// (Ensure your .env includes DISCORD_TOKEN, MONGODB_URI, CLIENT_ID, etc.)
 
 require('dotenv').config();
 const {
@@ -225,6 +225,9 @@ const slashCommands = [
   new SlashCommandBuilder().setName('help').setDescription('Show available commands')
 ];
 
+const { REST } = require('@discordjs/rest');
+const { Routes } = require('discord-api-types/v10');
+
 (async () => {
   const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
   try {
@@ -290,7 +293,7 @@ client.on('interactionCreate', async interaction => {
 client.on(Events.GuildMemberAdd, async member => {
   try {
     const config = await settingsCollection.findOne({ serverId: member.guild.id });
-    if (!config) return;
+    if (!config) return; // Setup not complete
     const welcomeMsg = (config.customWelcome || "Merhba Bik Fi A7sen Server!") + ` <@${member.id}>`;
     if (config.unverifiedRoleId) {
       const unverifiedRole = member.guild.roles.cache.get(config.unverifiedRoleId);
@@ -313,12 +316,12 @@ client.on(Events.GuildMemberAdd, async member => {
 client.on('messageCreate', async message => {
   if (message.author.bot) return;
   if (message.channel.name !== 'bot-setup') return;
-  // Fetch the guild owner to ensure only the owner triggers setup
+  // Fetch the actual guild owner
   let owner;
   try {
     owner = await message.guild.fetchOwner();
   } catch (err) {
-    console.error("Failed to fetch owner:", err);
+    console.error("Failed to fetch guild owner:", err);
     return;
   }
   if (message.author.id !== owner.id) {
@@ -345,6 +348,8 @@ client.on('messageCreate', async message => {
 // ------------------------------
 client.on(Events.GuildCreate, async guild => {
   try {
+    // Fetch the guild owner for permission overwrites.
+    const owner = await guild.fetchOwner();
     // Create "bot-setup" visible only to the owner.
     const setupChannel = await guild.channels.create({
       name: 'bot-setup',
@@ -352,10 +357,10 @@ client.on(Events.GuildCreate, async guild => {
       topic: 'Configure the bot here. This channel will be deleted after setup.',
       permissionOverwrites: [
         { id: guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
-        { id: guild.ownerId, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] }
+        { id: owner.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] }
       ]
     });
-    setupChannel.send(`<@${guild.ownerId}>, welcome! Let's set up your bot configuration.`);
+    setupChannel.send(`<@${owner.id}>, welcome! Let's set up your bot configuration.`);
     // Create "bot-config" visible only to the owner.
     await guild.channels.create({
       name: 'bot-config',
@@ -363,11 +368,11 @@ client.on(Events.GuildCreate, async guild => {
       topic: 'Bot configuration channel. Use slash commands like /setprefix, /setwelcome, etc.',
       permissionOverwrites: [
         { id: guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
-        { id: guild.ownerId, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] }
+        { id: owner.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] }
       ]
     });
     console.log("Created setup and config channels for", guild.name);
-    // Language selection buttons (all 5 languages)
+    // Language selection buttons
     const englishButton = new ButtonBuilder().setCustomId('lang_english').setLabel('English').setStyle(ButtonStyle.Primary);
     const darijaButton = new ButtonBuilder().setCustomId('lang_darija').setLabel('Darija').setStyle(ButtonStyle.Primary);
     const spanishButton = new ButtonBuilder().setCustomId('lang_spanish').setLabel('Spanish').setStyle(ButtonStyle.Primary);
@@ -395,7 +400,7 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
   const config = await settingsCollection.findOne({ serverId: guild.id });
   if (!config) return;
 
-  // Verification Process: If an unverified user joins the permanent verification channel...
+  // Verification Process: When an unverified user joins the permanent verification channel
   if (newState.channelId === config.voiceVerificationChannelId) {
     try {
       const member = newState.member;
@@ -427,7 +432,7 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
     }
   }
 
-  // One-Tap Process: When a verified user joins the one-tap channel, create a personal VC
+  // One-Tap Process: When a verified user joins the designated one-tap channel
   if (newState.channelId === config.oneTapChannelId) {
     try {
       const member = newState.member;
@@ -450,7 +455,7 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
     }
   }
 
-  // Auto-delete one-tap VC if empty and reassign owner if needed
+  // One-Tap: Auto-delete VC if empty and reassign owner if needed
   if (oldState.channel && onetapSessions.has(oldState.channel.id)) {
     let session = onetapSessions.get(oldState.channel.id);
     if (oldState.member.id === session.owner) {
@@ -547,7 +552,7 @@ client.on('messageCreate', async message => {
 });
 
 // ------------------------------
-// Interaction Handler for Profile Viewer Buttons
+// Interaction Handler for Profile Viewer Buttons (Avatar/Banner)
 // ------------------------------
 client.on('interactionCreate', async interaction => {
   if (!interaction.isButton()) return;
@@ -602,9 +607,9 @@ client.on('interactionCreate', async interaction => {
     return interaction.reply({ content: "You are not in a one-tap room.", ephemeral: true });
   }
   let session = onetapSessions.get(currentVC.id);
-
   if (commandName === 'claim') {
-    if (session.owner === member.id) return interaction.reply({ content: "You already own this tap.", ephemeral: true });
+    if (session.owner === member.id)
+      return interaction.reply({ content: "You already own this tap.", ephemeral: true });
     if (currentVC.members.has(session.owner)) {
       return interaction.reply({ content: "Owner is still present; cannot claim ownership.", ephemeral: true });
     }

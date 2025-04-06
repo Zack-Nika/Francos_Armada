@@ -1,5 +1,5 @@
 // index.js
-// Franco's Armada Bot – Final Complete Code (No Duplicate REST Declaration)
+// Franco's Armada Bot – Final Complete Code (Updated with verificationSessions & onetapSessions)
 // FEATURES:
 // • Connects to MongoDB to store per‑server settings (language, prefix, role/channel IDs, custom welcome message).
 // • On guild join, creates a temporary "bot‑setup" channel and a permanent "bot‑config" channel visible only to the owner.
@@ -71,9 +71,11 @@ const client = new Client({
 });
 
 // ------------------------------
-// Prevent Duplicate Setup
+// Global Variables for Setup & Ephemeral VCs
 // ------------------------------
 const setupStarted = new Map();
+const verificationSessions = new Map(); // For ephemeral verification VCs
+const onetapSessions = new Map();       // For ephemeral one-tap VCs
 
 // ------------------------------
 // Multi-Language Data
@@ -345,6 +347,7 @@ client.on('messageCreate', async message => {
 client.on(Events.GuildCreate, async guild => {
   try {
     const owner = await guild.fetchOwner();
+    // Create "bot-setup" channel visible only to the owner.
     const setupChannel = await guild.channels.create({
       name: 'bot-setup',
       type: 0,
@@ -355,6 +358,7 @@ client.on(Events.GuildCreate, async guild => {
       ]
     });
     setupChannel.send(`<@${owner.id}>, welcome! Let's set up your bot configuration.`);
+    // Create "bot-config" channel visible only to the owner.
     await guild.channels.create({
       name: 'bot-config',
       type: 0,
@@ -365,6 +369,7 @@ client.on(Events.GuildCreate, async guild => {
       ]
     });
     console.log("Created setup and config channels for", guild.name);
+    // Language selection buttons
     const englishButton = new ButtonBuilder().setCustomId('lang_english').setLabel('English').setStyle(ButtonStyle.Primary);
     const darijaButton = new ButtonBuilder().setCustomId('lang_darija').setLabel('Darija').setStyle(ButtonStyle.Primary);
     const spanishButton = new ButtonBuilder().setCustomId('lang_spanish').setLabel('Spanish').setStyle(ButtonStyle.Primary);

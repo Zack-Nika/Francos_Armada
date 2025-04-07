@@ -105,7 +105,7 @@ const languagePrompts = {
     unverifiedRoleId: "🔹 **# 3afak 3tini l'ID dyal Unverified Role**",
     verifiedGirlRoleId: "🔹 **# 3afak 3tini l'ID dyal Verified Girl Role**",
     verificatorRoleId: "🔹 **# 3tini l'ID dyal Verificator Role**",
-    voiceVerificationChannelId: "🔹 **# 3afak 3tini l'ID dyal Voice Verification Channel (permanent)**",
+    voiceVerificationChannelId: "🔹 **# 3afak 3tini l'ID dyal Voice Verification Channel (fin kytverifa bnadem jdid)**",
     oneTapChannelId: "🔹 **# 3tini l'ID dyal One-Tap Channel**",
     verificationAlertChannelId: "🔹 **# 3afak 3tini l'ID dyal Verification Alert Channel**",
     jailRoleId: "🔹 **# 3afak 3tini l'ID dyal Jailed Role** (awla la m3ndksh ktb `none`)",
@@ -167,8 +167,8 @@ const languageExtras = {
     setupComplete: "Setup complete! 🎉"
   },
   darija: {
-    setupStart: "Nbda setup. Copier-coller chaque ID quand demandé.",
-    setupComplete: "Setup sali! 🎉"
+    setupStart: "Nbdaw setup dialna. Copier-coller kol ID ghnsowlek 3lih.",
+    setupComplete: "Sf Bot db 100% Wajed! 🎉"
   },
   spanish: {
     setupStart: "Empecemos la configuración. Copia/pega cada ID cuando se te pida.",

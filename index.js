@@ -1,5 +1,5 @@
 // index.js
-// Franco's Armada Bot – Final Complete Code (with Verification Limits)
+// Franco's Armada Bot – Final Complete Code (No Duplicate REST Declaration)
 // FEATURES:
 // • Connects to MongoDB for per‑server settings (language, prefix, role/channel IDs, custom welcome message).
 // • On guild join, creates "bot‑setup" and "bot‑config" channels visible only to the owner.
@@ -9,12 +9,11 @@
 //     – When an unverified user joins the permanent verification channel (config.voiceVerificationChannelId),
 //       an ephemeral VC named "Verify – [displayName]" (userLimit: 2) is created and the user is moved there.
 //     – A plain‑text notification ("# New Member Ajew 🙋‍♂️") plus a "Join Verification" button is sent to the alert channel.
-//         • Both the notification and button are auto‑deleted after 8 seconds.
-//     – When a verificator clicks the "Join Verification" button, the bot first checks if the VC already has two members.
-//         • If so, it replies that the session is full.
-//         • Otherwise, it moves the verificator in and records their ID in the session.
-//     – In that VC, the verificator simply types "+boy" or "+girl" (with no mention) to verify the user,
-//         which removes the unverified role and adds the appropriate verified role.
+//         • Both the notification and button are auto‑deleted after 10 seconds.
+//     – When a verificator clicks the "Join Verification" button, the bot checks that the VC isn’t full (only 1 unverified + 1 verificator allowed).
+//         • If the VC is not full, the verificator is moved in and their ID is recorded in the session.
+//     – In that VC, the verificator simply types "+boy" or "+girl" (with no mention required) to verify the user,
+//         which removes the unverified role and adds the corresponding verified role.
 //     – When the verificator leaves, the bot moves the verified user to the nearest open VC (or falls back to the verification channel).
 // • One‑Tap Process:
 //     – When a verified user joins the designated one‑tap channel (config.oneTapChannelId), an ephemeral VC named "[displayName]'s Room" is created.
@@ -230,7 +229,7 @@ const slashCommands = [
   new SlashCommandBuilder().setName('help').setDescription('Show available commands')
 ];
 
-const { REST } = require('@discordjs/rest');
+const { REST } = require('discord.js'); // Using the REST import from discord.js
 const { Routes: Routes2 } = require('discord-api-types/v10');
 
 (async () => {
@@ -270,7 +269,7 @@ client.on('interactionCreate', async interaction => {
       const vcId = interaction.customId.split("_").pop();
       const tempVC = interaction.guild.channels.cache.get(vcId);
       if (!tempVC) return interaction.reply({ content: "Verification session expired.", ephemeral: true });
-      // NEW CHECK: Ensure only 2 members are allowed (1 unverified + 1 verificator)
+      // Ensure only 2 members (1 unverified + 1 verificator) can be in the session.
       if (tempVC.members.size >= 2) {
         return interaction.reply({ content: "Verification session is full. Only 1 unverified and 1 verificator allowed.", ephemeral: true });
       }
@@ -432,16 +431,16 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
       verificationSessions.set(tempVC.id, { userId: member.id, assignedVerificator: null, rejected: false });
       const alertChannel = guild.channels.cache.get(config.verificationAlertChannelId);
       if (alertChannel) {
-        // Send notification and button, then auto-delete after 8 seconds
+        // Send notification and button, then auto-delete after 10 seconds
         const notifMsg = await alertChannel.send("# New Member Ajew 🙋‍♂️");
-        setTimeout(() => notifMsg.delete().catch(() => {}), 8000);
+        setTimeout(() => notifMsg.delete().catch(() => {}), 10000);
         const joinButton = new ButtonBuilder()
           .setCustomId(`join_verification_${tempVC.id}`)
           .setLabel("Join Verification")
           .setStyle(ButtonStyle.Primary);
         const row = new ActionRowBuilder().addComponents(joinButton);
         const buttonMsg = await alertChannel.send({ components: [row] });
-        setTimeout(() => buttonMsg.delete().catch(() => {}), 8000);
+        setTimeout(() => buttonMsg.delete().catch(() => {}), 10000);
       }
     } catch (err) {
       console.error("Error in verification VC creation:", err);

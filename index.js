@@ -1,23 +1,26 @@
 // index.js
-// Franco's Armada Bot – Final Complete Code (Updated with verificationSessions & onetapSessions)
+// Franco's Armada Bot – Final Complete Code (with Verification Limits)
 // FEATURES:
-// • Connects to MongoDB to store per‑server settings (language, prefix, role/channel IDs, custom welcome message).
-// • On guild join, creates a temporary "bot‑setup" channel and a permanent "bot‑config" channel visible only to the owner.
-// • New members are assigned the unverified role and sent a welcome DM that tags them.
-// • Interactive multi‑language setup (English, Darija, Spanish, Russian, French) is triggered by the owner typing “ready” in the bot‑setup channel.
+// • Connects to MongoDB for per‑server settings (language, prefix, role/channel IDs, custom welcome message).
+// • On guild join, creates "bot‑setup" and "bot‑config" channels visible only to the owner.
+// • New members receive the unverified role and a welcome DM that tags them.
+// • Interactive multi‑language setup (English, Darija, Spanish, Russian, French) is triggered by the owner typing "ready" in the "bot‑setup" channel.
 // • Verification Process:
 //     – When an unverified user joins the permanent verification channel (config.voiceVerificationChannelId),
-//       the bot creates an ephemeral VC named "Verify – [displayName]" (userLimit: 2) and moves them there.
-//     – It then sends a plain‑text notification (“# New Member Ajew 🙋‍♂️”) plus a "Join Verification" button in the alert channel.
-//     – Verificators (who type “+boy” or “+girl” without mentioning the user) verify the user by removing the unverified role and adding the corresponding verified role.
-//     – When the verificator leaves, the bot moves the verified user to the nearest open VC.
+//       an ephemeral VC named "Verify – [displayName]" (userLimit: 2) is created and the user is moved there.
+//     – A plain‑text notification ("# New Member Ajew 🙋‍♂️") plus a "Join Verification" button is sent to the alert channel.
+//         • Both the notification and button are auto‑deleted after 8 seconds.
+//     – When a verificator clicks the "Join Verification" button, the bot first checks if the VC already has two members.
+//         • If so, it replies that the session is full.
+//         • Otherwise, it moves the verificator in and records their ID in the session.
+//     – In that VC, the verificator simply types "+boy" or "+girl" (with no mention) to verify the user,
+//         which removes the unverified role and adds the appropriate verified role.
+//     – When the verificator leaves, the bot moves the verified user to the nearest open VC (or falls back to the verification channel).
 // • One‑Tap Process:
-//     – When a verified user joins the designated one‑tap channel (config.oneTapChannelId), the bot creates an ephemeral VC named "[displayName]'s Room".
+//     – When a verified user joins the designated one‑tap channel (config.oneTapChannelId), an ephemeral VC named "[displayName]'s Room" is created.
 //     – This VC is created with a permission overwrite that denies VIEW_CHANNEL and CONNECT for the unverified role so that unverified users cannot see it.
 //     – The room is open by default and auto‑deletes when empty.
-// • Global slash commands (e.g. /setprefix, /setwelcome, /help, plus one‑tap commands such as /claim, /mute, /unmute, /lock, /unlock, /limit, /reject, /perm, /hide, /unhide, /transfer, /name, /status) and the "R" message command for profile viewing are provided.
-// • The "bot‑setup" and "bot‑config" channels are created so that only the owner can see them.
-// (Ensure your .env includes DISCORD_TOKEN, MONGODB_URI, CLIENT_ID, etc.)
+// • Global slash commands (e.g. /setprefix, /setwelcome, /help, plus one‑tap commands such as /claim, /mute, /unmute, /lock, /unlock, /limit, /reject, /perm, /hide, /unhide, /transfer, /name, /status) and an "R" command for profile viewing are provided.
 
 require('dotenv').config();
 const {
@@ -227,12 +230,15 @@ const slashCommands = [
   new SlashCommandBuilder().setName('help').setDescription('Show available commands')
 ];
 
+const { REST } = require('@discordjs/rest');
+const { Routes: Routes2 } = require('discord-api-types/v10');
+
 (async () => {
   const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
   try {
     console.log('Registering global slash commands...');
     await rest.put(
-      Routes.applicationCommands(process.env.CLIENT_ID),
+      Routes2.applicationCommands(process.env.CLIENT_ID),
       { body: slashCommands.map(cmd => cmd.toJSON()) }
     );
     console.log('Global slash commands registered.');
@@ -264,10 +270,20 @@ client.on('interactionCreate', async interaction => {
       const vcId = interaction.customId.split("_").pop();
       const tempVC = interaction.guild.channels.cache.get(vcId);
       if (!tempVC) return interaction.reply({ content: "Verification session expired.", ephemeral: true });
+      // NEW CHECK: Ensure only 2 members are allowed (1 unverified + 1 verificator)
+      if (tempVC.members.size >= 2) {
+        return interaction.reply({ content: "Verification session is full. Only 1 unverified and 1 verificator allowed.", ephemeral: true });
+      }
       const member = interaction.member;
       if (member.voice.channel) {
         try {
           await member.voice.setChannel(tempVC);
+          // Update session: if not already set, record the verificator's ID.
+          let session = verificationSessions.get(tempVC.id);
+          if (session && !session.assignedVerificator) {
+            session.assignedVerificator = member.id;
+            verificationSessions.set(tempVC.id, session);
+          }
           return interaction.reply({ content: "You have joined the verification VC.", ephemeral: true });
         } catch (err) {
           console.error(err);
@@ -416,13 +432,16 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
       verificationSessions.set(tempVC.id, { userId: member.id, assignedVerificator: null, rejected: false });
       const alertChannel = guild.channels.cache.get(config.verificationAlertChannelId);
       if (alertChannel) {
-        await alertChannel.send("# New Member Ajew 🙋‍♂️");
+        // Send notification and button, then auto-delete after 8 seconds
+        const notifMsg = await alertChannel.send("# New Member Ajew 🙋‍♂️");
+        setTimeout(() => notifMsg.delete().catch(() => {}), 8000);
         const joinButton = new ButtonBuilder()
           .setCustomId(`join_verification_${tempVC.id}`)
           .setLabel("Join Verification")
           .setStyle(ButtonStyle.Primary);
         const row = new ActionRowBuilder().addComponents(joinButton);
-        await alertChannel.send({ components: [row] });
+        const buttonMsg = await alertChannel.send({ components: [row] });
+        setTimeout(() => buttonMsg.delete().catch(() => {}), 8000);
       }
     } catch (err) {
       console.error("Error in verification VC creation:", err);
@@ -475,9 +494,10 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
     if (oldState.member.id === session.assignedVerificator) {
       if (oldState.channel.members.has(session.userId)) {
         const verifiedMember = oldState.channel.members.get(session.userId);
-        const activeVC = guild.channels.cache
+        let activeVC = guild.channels.cache
           .filter(ch => ch.type === 2 && ch.id !== oldState.channel.id && ch.members.size > 0)
           .first();
+        if (!activeVC) activeVC = guild.channels.cache.get(config.voiceVerificationChannelId);
         if (activeVC) {
           await verifiedMember.voice.setChannel(activeVC);
         }
@@ -491,23 +511,30 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
 });
 
 // ------------------------------
-// +boy / +girl Verification Command Handler
+// +boy / +girl Verification Command Handler (No mention required)
 // ------------------------------
 client.on('messageCreate', async message => {
   if (message.author.bot) return;
   if (message.content.startsWith('+boy') || message.content.startsWith('+girl')) {
     const config = await settingsCollection.findOne({ serverId: message.guild.id });
     if (!config) return message.reply("Bot is not configured for this server.");
-    const memberToVerify = message.mentions.members.first();
-    if (!memberToVerify) return message.reply("Please mention a user to verify (e.g. +boy @user).");
+    
+    // Use the verification session from the voice channel (no mention needed)
+    const voiceChannel = message.member.voice.channel;
+    if (!voiceChannel || !verificationSessions.has(voiceChannel.id)) {
+      return message.reply("You must be in a verification session VC to verify a user.");
+    }
+    const session = verificationSessions.get(voiceChannel.id);
+    const memberToVerify = message.guild.members.cache.get(session.userId);
+    if (!memberToVerify) return message.reply("No unverified user found in this session.");
     try {
       if (config.unverifiedRoleId) await memberToVerify.roles.remove(config.unverifiedRoleId);
       if (message.content.startsWith('+boy')) {
         if (config.verifiedRoleId) await memberToVerify.roles.add(config.verifiedRoleId);
-        message.channel.send(`${memberToVerify} verified as Boy!`);
+        message.channel.send(`${memberToVerify.displayName} verified as Boy!`);
       } else {
         if (config.verifiedGirlRoleId) await memberToVerify.roles.add(config.verifiedGirlRoleId);
-        message.channel.send(`${memberToVerify} verified as Girl!`);
+        message.channel.send(`${memberToVerify.displayName} verified as Girl!`);
       }
     } catch (err) {
       console.error("Verification error:", err);

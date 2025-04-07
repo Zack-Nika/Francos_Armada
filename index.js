@@ -1,5 +1,5 @@
 // index.js
-// Franco's Armada Bot – Final Complete Code (with Global & One-Tap Commands, Jail System, Verification Logging, and Need Help One-Tap)
+// Franco's Armada Bot – Final Complete Code (with Global & One-Tap Commands, Jail System, Verification Logging, Need Help One-Tap)
 // FEATURES:
 // • Connects to MongoDB for per‑server settings (language, prefix, role/channel IDs, custom welcome message, and new keys for need help).
 // • On guild join, creates "bot‑setup" and "bot‑config" channels visible only to the owner.
@@ -17,7 +17,7 @@
 //     – The room is open by default and auto‑deletes when empty.
 // • New "Need Help" One‑Tap Process:
 //     – When a member joins the designated need-help channel, the bot creates a temporary VC named "[displayName] needs help".
-//     – It then pings all users with the helper role in a designated log channel (if configured).
+//     – It then pings all users with the helper role in a designated help log channel (if configured).
 // • Global slash commands (e.g. /setprefix, /setwelcome, /showwelcome, /jail, /jinfo, /unban, /binfo, /topvrf, /toponline) work globally (admins/owners only).
 // • One‑Tap management slash commands (e.g. /claim, /mute, /unmute, /lock, /unlock, /limit, /reject, /perm, /hide, /unhide, /transfer, /name, /status, /help) require that the user is in a one‑tap room and respond with blue embed messages.
 // • The "R" command shows a user’s profile picture with Avatar/Banner buttons.
@@ -102,18 +102,18 @@ const languagePrompts = {
   },
   darija: {
     verifiedRoleId: "🔹 **# 3afak 3tini l'ID dyal Verified Boy Role**",
-    unverifiedRoleId: "🔹 **# 3tini db l'ID dyal Unverified Role**",
-    verifiedGirlRoleId: "🔹 **# o db 3tini l'ID dyal Verified Girl Role**",
-    verificatorRoleId: "🔹 **# ara m3ak l'ID dyal Verificator Role**",
-    voiceVerificationChannelId: "🔹 **# 3afak 3tini l'ID dyal Voice Verification Channel (fen bnadem kyje ytverifa)**",
-    oneTapChannelId: "🔹 **# 3afak 3tini l'ID dyal One-Tap Channel**",
-    verificationAlertChannelId: "🔹 **# 3tini l'ID dyal Verification Alert Channel (fen kaywslouk notifications dial verifications)**",
-    jailRoleId: "🔹 **# 3afak 3tini db l'ID dyal Jailed Role** (awla la ma3ndksh ktb `none`)",
-    voiceJailChannelId: "🔹 **# 3afak 3tini l'ID dyal Voice Jail Channel** (awla la ma3ndksh ktb `none`)",
-    verificationLogChannelId: "🔹 **# daba 3tini l'ID dyal Verification Log Channel** (awla la makynash ktb `none`)",
+    unverifiedRoleId: "🔹 **# 3afak 3tini l'ID dyal Unverified Role**",
+    verifiedGirlRoleId: "🔹 **# 3afak 3tini l'ID dyal Verified Girl Role**",
+    verificatorRoleId: "🔹 **# 3tini l'ID dyal Verificator Role**",
+    voiceVerificationChannelId: "🔹 **# 3afak 3tini l'ID dyal Voice Verification Channel (permanent)**",
+    oneTapChannelId: "🔹 **# 3tini l'ID dyal One-Tap Channel**",
+    verificationAlertChannelId: "🔹 **# 3afak 3tini l'ID dyal Verification Alert Channel**",
+    jailRoleId: "🔹 **# 3afak 3tini l'ID dyal Jailed Role** (awla la m3ndksh ktb `none`)",
+    voiceJailChannelId: "🔹 **# 3afak 3tini l'ID dyal Voice Jail Channel** (awla la m3ndksh ktb `none`)",
+    verificationLogChannelId: "🔹 **# 3afak 3tini l'ID dyal Verification Log Channel** (awla la m3ndksh ktb`none`)",
     needHelpChannelId: "🔹 **# 3afak 3tini l'ID dyal Need Help Channel**",
-    helperRoleId: "🔹 **# 3tini l'ID dyal Helper Role**",
-    needHelpLogChannelId: "🔹 **# 3afak 3tini l'ID dyal Need Help Log Channel** (aw `none`)"
+    helperRoleId: "🔹 **# 3afak 3tini l'ID dyal Helper Role**",
+    needHelpLogChannelId: "🔹 **# 3afak 3tini l'ID dyal Need Help Log Channel** (awla la m3ndksh ktb `none`)"
   },
   spanish: {
     verifiedRoleId: "🔹 **# Proporciona el ID del Rol de Chico Verificado**",
@@ -167,8 +167,8 @@ const languageExtras = {
     setupComplete: "Setup complete! 🎉"
   },
   darija: {
-    setupStart: "Okay Db Anbdaw setup. 3afak Copier/Coller kola ID Ansewlek 3lih .",
-    setupComplete: "Safi Bot Dialk Wajed 100% ! 🎉"
+    setupStart: "Nbda setup. Copier-coller chaque ID quand demandé.",
+    setupComplete: "Setup sali! 🎉"
   },
   spanish: {
     setupStart: "Empecemos la configuración. Copia/pega cada ID cuando se te pida.",
@@ -195,7 +195,7 @@ async function awaitResponse(channel, userId, prompt, lang) {
     return collected.first().content.trim();
   } catch {
     await channel.send(
-      lang === "darija" ? "T3atelti Bash Tsift lia Id. 3awed ktb `ready` Bash Nbdaw Mn Jdid." :
+      lang === "darija" ? "Setup t9llat. Kteb `ready` bach tbda men jdod." :
       lang === "spanish" ? "Tiempo agotado. Escribe `ready` para reiniciar." :
       lang === "russian" ? "Время истекло. Введите `ready` чтобы начать заново." :
       lang === "french" ? "Le temps est écoulé. Tapez `ready` pour recommencer." :
@@ -635,10 +635,74 @@ client.on('interactionCreate', async interaction => {
       .setTitle("Available Commands")
       .setDescription("Commands for configuration and one-tap management.")
       .addFields(
-        { name: "Global", value: "`/setprefix`, `/setwelcome`, `/showwelcome`, `/jail`, `/jinfo`, `/unban`, `/binfo`, `/topvrf`, `/toponline` },
-        { name: "One-Tap", value: "`/claim`, `/mute`, `/unmute`, `/lock`, `/unlock`, `/limit`, `/reject`, `/perm`, `/hide`, `/unhide`, `/transfer`, `/name`, `/status` }
+        { name: "Global", value: "/setprefix, /setwelcome, /showwelcome, /jail, /jinfo, /unban, /binfo, /topvrf, /toponline" },
+        { name: "One-Tap", value: "/claim, /mute, /unmute, /lock, /unlock, /limit, /reject, /perm, /hide, /unhide, /transfer, /name, /status" }
       );
     return interaction.reply({ embeds: [helpEmbed], ephemeral: true });
+  }
+});
+
+// ------------------------------
+// Interaction Handler for Profile Viewer Buttons (Avatar/Banner)
+// ------------------------------
+client.on('interactionCreate', async interaction => {
+  if (!interaction.isButton()) return;
+  if (interaction.customId.startsWith("lang_") || interaction.customId.startsWith("join_verification_")) return;
+  const [action, userId] = interaction.customId.split('_');
+  if (!userId) return;
+  try {
+    const targetUser = await client.users.fetch(userId, { force: true });
+    if (action === 'avatar') {
+      const avatarURL = targetUser.displayAvatarURL({ dynamic: true, size: 1024 });
+      const embed = new EmbedBuilder()
+        .setColor(0x00AE86)
+        .setTitle(`${targetUser.username}'s Avatar`)
+        .setImage(avatarURL);
+      return interaction.update({ embeds: [embed], components: [] });
+    } else if (action === 'banner') {
+      const bannerURL = targetUser.bannerURL({ dynamic: true, size: 1024 });
+      if (!bannerURL) return interaction.reply({ content: "No banner set.", ephemeral: true });
+      const embed = new EmbedBuilder()
+        .setColor(0x00AE86)
+        .setTitle(`${targetUser.username}'s Banner`)
+        .setImage(bannerURL);
+      return interaction.update({ embeds: [embed], components: [] });
+    }
+  } catch (err) {
+    console.error("Error fetching user for profile:", err);
+    return interaction.reply({ content: "Error fetching user data.", ephemeral: true });
+  }
+});
+
+// ------------------------------
+// "R" Command for Profile Viewer
+// ------------------------------
+client.on('messageCreate', async message => {
+  if (message.author.bot) return;
+  const content = message.content.trim().toLowerCase();
+  if ((content === 'r' || content.startsWith('r ')) && content !== 'ready') {
+    let targetUser = message.mentions.users.first() || message.author;
+    try {
+      targetUser = await targetUser.fetch();
+    } catch (err) {
+      console.error("Error fetching user data:", err);
+      return message.reply("Error fetching user data.");
+    }
+    const embed = new EmbedBuilder()
+      .setColor(0x0099ff)
+      .setTitle(`${targetUser.username}'s Profile Picture`)
+      .setDescription("Click a button below to view Avatar or Banner.")
+      .setThumbnail(targetUser.displayAvatarURL({ dynamic: true, size: 1024 }));
+    const avatarButton = new ButtonBuilder()
+      .setCustomId(`avatar_${targetUser.id}`)
+      .setLabel("Avatar")
+      .setStyle(ButtonStyle.Primary);
+    const bannerButton = new ButtonBuilder()
+      .setCustomId(`banner_${targetUser.id}`)
+      .setLabel("Banner")
+      .setStyle(ButtonStyle.Secondary);
+    const row = new ActionRowBuilder().addComponents(avatarButton, bannerButton);
+    message.channel.send({ embeds: [embed], components: [row] });
   }
 });
 
@@ -724,17 +788,14 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
           permissionOverwrites.push({ id: unverifiedRole.id, deny: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.Connect] });
         }
       }
-      // Create a temporary VC for need help (e.g., "Franco needs help" or "[username] needs help")
       const helpVC = await guild.channels.create({
         name: `${displayName} needs help`,
         type: 2,
         parent: newState.channel.parentId,
         permissionOverwrites
       });
-      // Store the one-tap session for need help similarly
       onetapSessions.set(helpVC.id, { owner: member.id, rejectedUsers: [], status: "need help" });
       await member.voice.setChannel(helpVC);
-      // Ping helpers in the designated help log channel if configured
       if (config.helperRoleId && config.needHelpLogChannelId && config.needHelpLogChannelId !== "none") {
         const helperRole = guild.roles.cache.get(config.helperRoleId);
         const helpLogChannel = guild.channels.cache.get(config.needHelpLogChannelId);

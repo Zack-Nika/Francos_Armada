@@ -229,7 +229,6 @@ const slashCommands = [
   new SlashCommandBuilder().setName('help').setDescription('Show available commands')
 ];
 
-const { REST } = require('discord.js'); // Using the REST import from discord.js
 const { Routes: Routes2 } = require('discord-api-types/v10');
 
 (async () => {

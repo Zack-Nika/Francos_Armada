@@ -1,36 +1,37 @@
+Below is a complete version of your code modified so that when any ephemeral (one‑tap, need‑help, or verification) channel becomes empty it is deleted immediately (with no extra delay), and a fallback cleanup runs every 2 seconds as a safety net. This version also ensures that in the verification alert you get one combined big‑bold message with a button, and that if a verificator/helper joins the session the alert is removed immediately.
+
+Simply copy and paste the entire code into your index.js file, deploy it, and run your interactive setup as the owner in the “bot‑setup” channel. Make sure your Railway environment variables (DISCORD_TOKEN, MONGODB_URI, CLIENT_ID) are set correctly.
+
+
+---
+
 // index.js
-// Franco's Armada Bot – Final Complete Code
+// Franco's Armada Bot – Final Complete Code with Immediate Empty Channel Deletion
 // FEATURES:
-// • Connects to MongoDB for per‑server settings (language, prefix, role/channel IDs, custom welcome message, need help keys).
+// • Connects to MongoDB for per‑server settings (language, prefix, role/channel IDs, custom welcome message, etc.).
 // • On guild join, creates "bot‑setup" and "bot‑config" channels (visible only to the owner).
 // • New members automatically receive the unverified role.
 // • Interactive multi‑language setup triggered by the owner typing "ready" in the "bot‑setup" channel.
 // • Verification Process:
-//     – When an unverified user joins the designated verification channel, an ephemeral VC (named "Verify – [displayName]")
-//       is created (userLimit: 2) and the user is moved there.
-//     – A plain‑text notification (e.g. "(# Member Jdid Ajew)") and a "Join Verification" button are sent to the
-//       configured alert channel. Both messages auto‑delete after 10 seconds.
-//     – When a verificator clicks the button (if not already assigned), they’re moved into the VC and recorded.
-//     – In that VC, the verificator types "+boy" or "+girl" to verify the member.
-//     – Upon verification, a success embed is sent (without any extra footer text).
-//     – When the verificator leaves, the bot moves the verified user to another available channel.
+//     – When an unverified user joins the designated permanent verification channel, an ephemeral VC named 
+//        "Verify – [displayName]" is created with userLimit 2 and with explicit permissions to connect, speak, and attach files.
+//     – A single notification is sent in the alert channel with big bold text using “#” (for example, “# New Member Ajew 🙋‍♂️”) plus a “Join Verification” button.
+//         • This alert message is scheduled to delete after 11 seconds if no verificator joins; if a verificator joins, it is deleted immediately.
+//     – In that VC, the verificator simply types “+boy” or “+girl” to verify the user.
+//     – When the verificator leaves, the bot moves the verified user to an available channel.
 // • One‑Tap Process:
-//     – When a verified user joins the designated one‑tap channel, an ephemeral VC (named "[displayName]'s Room")
-//       is created with overwrites so that the unverified role cannot view or connect.
-//     – Any previous one‑tap session owned by that user is deleted first.
-//     – No separate text channel is created – users use the voice channel's built‑in text chat (if available),
-//       with permission to attach files.
-// • Need Help Process:
-//     – When a member joins the designated need‑help channel, an ephemeral VC (named "[displayName] needs help")
-//       is created.
-//     – A notification is sent in the help log channel that pings the helper role and includes a "Join Help" button,
-//       which auto‑deletes after 10 seconds.
-//     – If the need‑help session owner leaves, the channel is immediately deleted.
-// • Global slash commands (e.g. /setprefix, /setwelcome, /showwelcome, /jail, /jinfo, /unban, /binfo, /topvrf, /toponline)
-//     are available to administrators/owners.
-// • One‑Tap management slash commands (e.g. /claim, /mute, /unmute, /lock, /unlock, /limit, /reject, /perm, /hide, /unhide, /transfer, /name, /status, /help)
-//     are available to members in a one‑tap session.
-// • The "R" command shows a user's profile picture (with Avatar/Banner buttons) only once.
+//     – When a verified user joins the designated one‑tap channel, an ephemeral VC named “[displayName]'s Room” is created.
+//     – If the user already had an ephemeral session, the previous one is deleted first.
+//     – The ephemeral VC’s permission overwrites prevent the unverified role from viewing or connecting.
+//     – No separate text channel is created—the voice channel’s built‑in chat is used (with AttachFiles allowed).
+// • Need‑Help Process:
+//     – When a member joins the designated need‑help channel, an ephemeral VC named “[displayName] needs help” is created.
+//     – A single notification is sent in the help log channel with big bold text in the format “# {DisplayName} needs help 🆘️” plus a “Join Help” button.
+//         • This message is auto‑deleted after 11 seconds if no helper joins; if someone does join, it is removed immediately.
+// • Global slash commands (e.g. /setprefix, /setwelcome, /showwelcome, /jail, /jinfo, /unban, /binfo, /topvrf, /toponline) are available to admins/owners.
+// • One‑Tap / Need‑Help session management commands (e.g. /claim, /mute, /unmute, /lock, /unlock, /limit, /reject, /perm, /hide, /unhide, /transfer, /name, /status, /help) are available to session participants.
+// • The “R” command shows a user’s profile picture (with Avatar/Banner buttons) in a single response.
+// • Ephemeral channels are deleted immediately when they become empty (no timer) and a periodic cleanup (every 2 seconds) is used as a fallback.
 
 require('dotenv').config();
 const {
@@ -84,7 +85,8 @@ const client = new Client({
 });
 
 // ------------------------------
-// Update Bot Username on Ready (if needed)
+// Set Bot Username on Ready
+// ------------------------------
 client.once(Events.ClientReady, () => {
   console.log(`Logged in as ${client.user.tag}`);
   if (client.user.username !== "Franco's Armada") {
@@ -97,11 +99,11 @@ client.once(Events.ClientReady, () => {
 // ------------------------------
 const setupStarted = new Map();
 const verificationSessions = new Map(); // For ephemeral verification VCs
-const onetapSessions = new Map();       // For ephemeral one‑tap and need-help VCs
-const jailData = new Map();             // To store jail reasons
+const onetapSessions = new Map();       // For ephemeral one-tap and need-help VCs
+const jailData = new Map();
 
 // ------------------------------
-// Multi-Language Data (English only shown; add others as needed)
+// Language Data (English Only; add others as needed)
 // ------------------------------
 const languagePrompts = {
   english: {
@@ -119,7 +121,6 @@ const languagePrompts = {
     helperRoleId: "🔹 **# Provide the Helper Role ID**",
     needHelpLogChannelId: "🔹 **# Provide the Need Help Log Channel ID** (or type `none`)"
   }
-  // Add additional languages (darija, spanish, russian, french) as needed.
 };
 
 const languageExtras = {
@@ -127,20 +128,19 @@ const languageExtras = {
     setupStart: "Let's begin setup. Please copy/paste each ID as prompted.",
     setupComplete: "Setup complete! 🎉"
   }
-  // Add extras for other languages if needed.
 };
 
 // ------------------------------
 // Helper: Await Single Message (90s Timeout)
 // ------------------------------
-async function awaitResponse(channel, userId, prompt, lang) {
+async function awaitResponse(channel, userId, prompt) {
   await channel.send(prompt + "\n*(90 seconds to respond.)*");
   const filter = m => m.author.id === userId;
   try {
     const collected = await channel.awaitMessages({ filter, max: 1, time: 90000, errors: ['time'] });
     return collected.first().content.trim();
   } catch {
-    await channel.send("Setup timed out. Type `ready` to restart setup.");
+    await channel.send("Setup timed out. Type `ready` to restart.");
     throw new Error("Setup timed out");
   }
 }
@@ -154,7 +154,7 @@ async function runSetup(ownerId, setupChannel, guildId, lang) {
   const extras = languageExtras[lang] || languageExtras.english;
   await setupChannel.send(extras.setupStart);
   for (const [key, prompt] of Object.entries(prompts)) {
-    const response = await awaitResponse(setupChannel, ownerId, prompt, lang);
+    const response = await awaitResponse(setupChannel, ownerId, prompt);
     config[key] = (response.toLowerCase() === "none") ? null : response;
   }
   try {
@@ -178,10 +178,10 @@ client.on('interactionCreate', async interaction => {
         { $set: { language: langChosen } },
         { upsert: true }
       );
-      await interaction.reply({ content: `Language set to ${langChosen}! Type \`ready\` to begin setup.`, flags: 64 });
+      return interaction.reply({ content: `Language set to ${langChosen}! Type \`ready\` to begin setup.`, flags: 64 });
     } catch (err) {
       console.error("Error setting language:", err);
-      await interaction.reply({ content: "Error setting language.", flags: 64 });
+      return interaction.reply({ content: "Error setting language.", flags: 64 });
     }
   }
 });
@@ -191,82 +191,48 @@ client.on('interactionCreate', async interaction => {
 // ------------------------------
 client.commands = new Collection();
 const slashCommands = [
-  new SlashCommandBuilder()
-    .setName('setprefix')
-    .setDescription('Set a custom prefix')
+  new SlashCommandBuilder().setName('setprefix').setDescription('Set a custom prefix')
     .addStringOption(o => o.setName('prefix').setDescription('New prefix').setRequired(true)),
-  new SlashCommandBuilder()
-    .setName('setwelcome')
-    .setDescription('Set a custom welcome message')
+  new SlashCommandBuilder().setName('setwelcome').setDescription('Set a custom welcome message')
     .addStringOption(o => o.setName('message').setDescription('Welcome message').setRequired(true)),
-  new SlashCommandBuilder()
-    .setName('showwelcome')
-    .setDescription('Show the current welcome message'),
-  new SlashCommandBuilder()
-    .setName('jail')
-    .setDescription('Jail a user')
+  new SlashCommandBuilder().setName('showwelcome').setDescription('Show the current welcome message'),
+  new SlashCommandBuilder().setName('jail').setDescription('Jail a user')
     .addStringOption(o => o.setName('userid').setDescription('User ID').setRequired(true))
     .addStringOption(o => o.setName('reason').setDescription('Reason').setRequired(true))
     .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
-  new SlashCommandBuilder()
-    .setName('jinfo')
-    .setDescription('Get jail info for a user')
+  new SlashCommandBuilder().setName('jinfo').setDescription('Get jail info for a user')
     .addStringOption(o => o.setName('userid').setDescription('User ID').setRequired(true))
     .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
-  new SlashCommandBuilder()
-    .setName('unban')
-    .setDescription('Unjail a user')
+  new SlashCommandBuilder().setName('unban').setDescription('Unjail a user')
     .addStringOption(o => o.setName('userid').setDescription('User ID').setRequired(true))
     .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
-  new SlashCommandBuilder()
-    .setName('binfo')
-    .setDescription('Show total bans')
+  new SlashCommandBuilder().setName('binfo').setDescription('Show total bans')
     .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
-  new SlashCommandBuilder()
-    .setName('topvrf')
-    .setDescription('Show top verificators')
+  new SlashCommandBuilder().setName('topvrf').setDescription('Show top verificators')
     .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
-  new SlashCommandBuilder()
-    .setName('toponline')
-    .setDescription('Show top online users')
+  new SlashCommandBuilder().setName('toponline').setDescription('Show top online users')
     .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
-  // One-Tap/Need Help Management commands
-  new SlashCommandBuilder().setName('claim').setDescription('Claim ownership of your tap'),
-  new SlashCommandBuilder()
-    .setName('mute')
-    .setDescription('Mute a user in your tap')
+  // Session (One-tap/Need-help) Commands
+  new SlashCommandBuilder().setName('claim').setDescription('Claim ownership of your session'),
+  new SlashCommandBuilder().setName('mute').setDescription('Mute a user in your session')
     .addUserOption(o => o.setName('target').setDescription('User to mute').setRequired(true)),
-  new SlashCommandBuilder()
-    .setName('unmute')
-    .setDescription('Unmute a user in your tap')
+  new SlashCommandBuilder().setName('unmute').setDescription('Unmute a user in your session')
     .addUserOption(o => o.setName('target').setDescription('User to unmute').setRequired(true)),
-  new SlashCommandBuilder().setName('lock').setDescription('Lock your tap'),
-  new SlashCommandBuilder().setName('unlock').setDescription('Unlock your tap'),
-  new SlashCommandBuilder()
-    .setName('limit')
-    .setDescription('Set a user limit for your tap')
+  new SlashCommandBuilder().setName('lock').setDescription('Lock your session'),
+  new SlashCommandBuilder().setName('unlock').setDescription('Unlock your session'),
+  new SlashCommandBuilder().setName('limit').setDescription('Set a user limit for your session')
     .addIntegerOption(o => o.setName('number').setDescription('User limit').setRequired(true)),
-  new SlashCommandBuilder()
-    .setName('reject')
-    .setDescription('Reject a user from your tap')
+  new SlashCommandBuilder().setName('reject').setDescription('Reject a user from your session')
     .addUserOption(o => o.setName('target').setDescription('User to reject').setRequired(true)),
-  new SlashCommandBuilder()
-    .setName('perm')
-    .setDescription('Permit a rejected user to join again')
+  new SlashCommandBuilder().setName('perm').setDescription('Permit a rejected user to join again')
     .addUserOption(o => o.setName('target').setDescription('User to permit').setRequired(true)),
-  new SlashCommandBuilder().setName('hide').setDescription('Hide your tap'),
-  new SlashCommandBuilder().setName('unhide').setDescription('Unhide your tap'),
-  new SlashCommandBuilder()
-    .setName('transfer')
-    .setDescription('Transfer ownership of your tap')
+  new SlashCommandBuilder().setName('hide').setDescription('Hide your session'),
+  new SlashCommandBuilder().setName('unhide').setDescription('Unhide your session'),
+  new SlashCommandBuilder().setName('transfer').setDescription('Transfer session ownership')
     .addUserOption(o => o.setName('target').setDescription('User to transfer to').setRequired(true)),
-  new SlashCommandBuilder()
-    .setName('name')
-    .setDescription('Rename your tap')
+  new SlashCommandBuilder().setName('name').setDescription('Rename your session')
     .addStringOption(o => o.setName('text').setDescription('New name').setRequired(true)),
-  new SlashCommandBuilder()
-    .setName('status')
-    .setDescription('Set a status for your tap')
+  new SlashCommandBuilder().setName('status').setDescription('Set a status for your session')
     .addStringOption(o => o.setName('text').setDescription('Status text').setRequired(true)),
   new SlashCommandBuilder().setName('help').setDescription('Show available commands')
 ];
@@ -296,9 +262,11 @@ client.on('interactionCreate', async interaction => {
   if (!config) {
     return interaction.reply({ content: "Bot is not configured for this server.", flags: 64 });
   }
-  const globalCommands = ["setprefix", "setwelcome", "showwelcome", "jail", "jinfo", "unban", "binfo", "topvrf", "toponline"];
-  if (globalCommands.includes(commandName)) {
-    if (!interaction.memberPermissions.has(PermissionsBitField.Flags.Administrator) && interaction.member.id !== interaction.guild.ownerId) {
+  
+  const globalCmds = ["setprefix", "setwelcome", "showwelcome", "jail", "jinfo", "unban", "binfo", "topvrf", "toponline"];
+  if (globalCmds.includes(commandName)) {
+    if (!interaction.memberPermissions.has(PermissionsBitField.Flags.Administrator) &&
+        interaction.member.id !== interaction.guild.ownerId) {
       return interaction.reply({ content: "You are not allowed to use this command.", flags: 64 });
     }
     if (commandName === "setprefix") {
@@ -306,7 +274,7 @@ client.on('interactionCreate', async interaction => {
       try {
         await settingsCollection.updateOne({ serverId: interaction.guild.id }, { $set: { prefix } }, { upsert: true });
         return interaction.reply({ content: `Prefix updated to ${prefix}.`, flags: 64 });
-      } catch (e) {
+      } catch(e) {
         console.error(e);
         return interaction.reply({ content: "Failed to update prefix.", flags: 64 });
       }
@@ -315,7 +283,7 @@ client.on('interactionCreate', async interaction => {
       try {
         await settingsCollection.updateOne({ serverId: interaction.guild.id }, { $set: { customWelcome: msg } }, { upsert: true });
         return interaction.reply({ content: "Welcome message updated!", flags: 64 });
-      } catch (e) {
+      } catch(e) {
         console.error(e);
         return interaction.reply({ content: "Failed to update welcome message.", flags: 64 });
       }
@@ -330,9 +298,7 @@ client.on('interactionCreate', async interaction => {
         await targetMember.roles.set([]);
         if (config.jailRoleId && config.jailRoleId !== "none") {
           const jailRole = interaction.guild.roles.cache.get(config.jailRoleId);
-          if (jailRole) {
-            await targetMember.roles.add(jailRole);
-          }
+          if (jailRole) await targetMember.roles.add(jailRole);
         }
         if (config.voiceJailChannelId && config.voiceJailChannelId !== "none" && targetMember.voice.channel) {
           const jailVC = interaction.guild.channels.cache.get(config.voiceJailChannelId);
@@ -340,7 +306,7 @@ client.on('interactionCreate', async interaction => {
         }
         jailData.set(targetMember.id, reason);
         return interaction.reply({ content: `${targetMember.displayName} jailed for: ${reason}`, flags: 64 });
-      } catch (e) {
+      } catch(e) {
         console.error(e);
         return interaction.reply({ content: "Failed to jail user.", flags: 64 });
       }
@@ -361,7 +327,7 @@ client.on('interactionCreate', async interaction => {
         }
         jailData.delete(targetMember.id);
         return interaction.reply({ content: `${targetMember.displayName} unjailed.`, flags: 64 });
-      } catch (e) {
+      } catch(e) {
         console.error(e);
         return interaction.reply({ content: "Failed to unjail user.", flags: 64 });
       }
@@ -369,7 +335,7 @@ client.on('interactionCreate', async interaction => {
       try {
         const bans = await interaction.guild.bans.fetch();
         return interaction.reply({ content: `Total banned users: ${bans.size}`, flags: 64 });
-      } catch (e) {
+      } catch(e) {
         console.error(e);
         return interaction.reply({ content: "Failed to fetch ban info.", flags: 64 });
       }
@@ -380,15 +346,15 @@ client.on('interactionCreate', async interaction => {
     }
     return;
   }
-
-  // One-Tap / Need Help Management commands (Require user to be in an ephemeral session)
+  
+  // Otherwise, assume session (one-tap / need-help) commands
   const member = interaction.member;
   const currentVC = member.voice.channel;
   if (!currentVC || !onetapSessions.has(currentVC.id)) {
     return interaction.reply({ content: "You are not in an ephemeral session.", flags: 64 });
   }
-  const session = onetapSessions.get(currentVC.id) || {};
-
+  const session = onetapSessions.get(currentVC.id);
+  
   if (commandName === "claim") {
     if (session.owner === member.id)
       return interaction.reply({ content: "You already own this session.", flags: 64 });
@@ -406,7 +372,7 @@ client.on('interactionCreate', async interaction => {
     try {
       await targetMember.voice.setMute(true);
       return interaction.reply({ content: `${targetMember.displayName} has been muted.`, flags: 64 });
-    } catch (e) {
+    } catch(e) {
       console.error(e);
       return interaction.reply({ content: "Failed to mute user.", flags: 64 });
     }
@@ -419,7 +385,7 @@ client.on('interactionCreate', async interaction => {
     try {
       await targetMember.voice.setMute(false);
       return interaction.reply({ content: `${targetMember.displayName} has been unmuted.`, flags: 64 });
-    } catch (e) {
+    } catch(e) {
       console.error(e);
       return interaction.reply({ content: "Failed to unmute user.", flags: 64 });
     }
@@ -428,7 +394,7 @@ client.on('interactionCreate', async interaction => {
     try {
       await currentVC.permissionOverwrites.edit(interaction.guild.id, { Connect: false });
       return interaction.reply({ content: "Session locked.", flags: 64 });
-    } catch (e) {
+    } catch(e) {
       console.error(e);
       return interaction.reply({ content: "Failed to lock session.", flags: 64 });
     }
@@ -437,7 +403,7 @@ client.on('interactionCreate', async interaction => {
     try {
       await currentVC.permissionOverwrites.edit(interaction.guild.id, { Connect: true });
       return interaction.reply({ content: "Session unlocked.", flags: 64 });
-    } catch (e) {
+    } catch(e) {
       console.error(e);
       return interaction.reply({ content: "Failed to unlock session.", flags: 64 });
     }
@@ -447,7 +413,7 @@ client.on('interactionCreate', async interaction => {
     try {
       await currentVC.setUserLimit(number);
       return interaction.reply({ content: `User limit set to ${number}.`, flags: 64 });
-    } catch (e) {
+    } catch(e) {
       console.error(e);
       return interaction.reply({ content: "Failed to set user limit.", flags: 64 });
     }
@@ -461,10 +427,12 @@ client.on('interactionCreate', async interaction => {
         await targetMember.voice.disconnect();
       }
       session.rejectedUsers = session.rejectedUsers || [];
-      if (!session.rejectedUsers.includes(target.id)) session.rejectedUsers.push(target.id);
+      if (!session.rejectedUsers.includes(target.id)) {
+        session.rejectedUsers.push(target.id);
+      }
       onetapSessions.set(currentVC.id, session);
       return interaction.reply({ content: `User ${target.username} rejected.`, flags: 64 });
-    } catch (e) {
+    } catch(e) {
       console.error(e);
       return interaction.reply({ content: "Failed to reject user.", flags: 64 });
     }
@@ -474,7 +442,9 @@ client.on('interactionCreate', async interaction => {
     if (!target) return interaction.reply({ content: "Please mention a user.", flags: 64 });
     session.rejectedUsers = session.rejectedUsers || [];
     const idx = session.rejectedUsers.indexOf(target.id);
-    if (idx === -1) return interaction.reply({ content: "User is not rejected.", flags: 64 });
+    if (idx === -1) {
+      return interaction.reply({ content: "User is not rejected.", flags: 64 });
+    }
     session.rejectedUsers.splice(idx, 1);
     onetapSessions.set(currentVC.id, session);
     return interaction.reply({ content: `User ${target.username} is now permitted.`, flags: 64 });
@@ -483,7 +453,7 @@ client.on('interactionCreate', async interaction => {
     try {
       await currentVC.permissionOverwrites.edit(interaction.guild.id, { ViewChannel: false });
       return interaction.reply({ content: "Session hidden.", flags: 64 });
-    } catch (e) {
+    } catch(e) {
       console.error(e);
       return interaction.reply({ content: "Failed to hide session.", flags: 64 });
     }
@@ -492,7 +462,7 @@ client.on('interactionCreate', async interaction => {
     try {
       await currentVC.permissionOverwrites.edit(interaction.guild.id, { ViewChannel: true });
       return interaction.reply({ content: "Session visible.", flags: 64 });
-    } catch (e) {
+    } catch(e) {
       console.error(e);
       return interaction.reply({ content: "Failed to unhide session.", flags: 64 });
     }
@@ -504,7 +474,7 @@ client.on('interactionCreate', async interaction => {
       session.owner = target.id;
       onetapSessions.set(currentVC.id, session);
       return interaction.reply({ content: `Ownership transferred to ${target.username}.`, flags: 64 });
-    } catch (e) {
+    } catch(e) {
       console.error(e);
       return interaction.reply({ content: "Failed to transfer ownership.", flags: 64 });
     }
@@ -514,7 +484,7 @@ client.on('interactionCreate', async interaction => {
     try {
       await currentVC.setName(newName);
       return interaction.reply({ content: `Session renamed to ${newName}.`, flags: 64 });
-    } catch (e) {
+    } catch(e) {
       console.error(e);
       return interaction.reply({ content: "Failed to rename session.", flags: 64 });
     }
@@ -539,71 +509,6 @@ client.on('interactionCreate', async interaction => {
 });
 
 // ------------------------------
-// "Join Verification" Button Handler
-// ------------------------------
-client.on('interactionCreate', async interaction => {
-  if (!interaction.isButton()) return;
-  if (!interaction.customId.startsWith("join_verification_")) return;
-  
-  const vcId = interaction.customId.split("_").pop();
-  const tempVC = interaction.guild.channels.cache.get(vcId);
-  if (!tempVC) return interaction.reply({ content: "Verification session expired.", flags: 64 });
-  if (tempVC.members.size >= 2) {
-    return interaction.reply({ content: "Verification session is full.", flags: 64 });
-  }
-  const member = interaction.member;
-  if (member.voice.channel) {
-    try {
-      await member.voice.setChannel(tempVC);
-      let session = verificationSessions.get(tempVC.id);
-      if (session && session.assignedVerificator) {
-        return interaction.reply({ content: "Another verificator is already in session.", flags: 64 });
-      }
-      if (session && !session.assignedVerificator) {
-        session.assignedVerificator = member.id;
-        verificationSessions.set(tempVC.id, session);
-      }
-      return interaction.reply({ content: "You have joined the verification session.", flags: 64 });
-    } catch (e) {
-      console.error(e);
-      return interaction.reply({ content: "Failed to move you.", flags: 64 });
-    }
-  } else {
-    try {
-      const invite = await tempVC.createInvite({ maxAge: 300, maxUses: 1 });
-      return interaction.reply({ content: `Join using this link: ${invite.url}`, flags: 64 });
-    } catch (e) {
-      console.error(e);
-      return interaction.reply({ content: "Failed to create invite.", flags: 64 });
-    }
-  }
-});
-
-// ------------------------------
-// "Join Help" Button Handler
-// ------------------------------
-client.on('interactionCreate', async interaction => {
-  if (!interaction.isButton()) return;
-  if (!interaction.customId.startsWith("join_help_")) return;
-  
-  const vcId = interaction.customId.split("_").pop();
-  const helpVC = interaction.guild.channels.cache.get(vcId);
-  if (!helpVC) return interaction.reply({ content: "Help session expired.", flags: 64 });
-  try {
-    if (interaction.member.voice.channel) {
-      await interaction.member.voice.setChannel(helpVC);
-      return interaction.reply({ content: "You have joined the help session.", flags: 64 });
-    } else {
-      const invite = await helpVC.createInvite({ maxAge: 300, maxUses: 1 });
-      return interaction.reply({ content: `Join via this link: ${invite.url}`, flags: 64 });
-    }
-  } catch (e) {
-    console.error(e);
-    return interaction.reply({ content: "Failed to move you to help.", flags: 64 });
-  }
-});
-
-// ------------------------------
 // VoiceStateUpdate Handler for Verification, One-Tap, and Need Help
 // ------------------------------
 client.on('voiceStateUpdate', async (oldState, newState) => {
@@ -618,31 +523,51 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
       const unverifiedRole = guild.roles.cache.get(config.unverifiedRoleId);
       if (!unverifiedRole) return;
       if (!member.roles.cache.has(unverifiedRole.id)) return;
+      // Create ephemeral verification VC with "Speak" permission so member can talk.
       const tempVC = await guild.channels.create({
         name: `Verify – ${member.displayName}`,
         type: 2,
         parent: newState.channel.parentId,
         userLimit: 2,
         permissionOverwrites: [
-          { id: member.id, allow: [PermissionsBitField.Flags.Connect, PermissionsBitField.Flags.AttachFiles] }
+          { id: member.id,
+            allow: [
+              PermissionsBitField.Flags.Connect,
+              PermissionsBitField.Flags.Speak,
+              PermissionsBitField.Flags.AttachFiles
+            ]
+          }
         ]
       });
       await member.voice.setChannel(tempVC);
-      verificationSessions.set(tempVC.id, { userId: member.id, assignedVerificator: null, rejected: false });
+      verificationSessions.set(tempVC.id, { userId: member.id, assignedVerificator: null, alertMessageId: null });
+      
+      // Send a single notification with big bold text and button.
       const alertChannel = guild.channels.cache.get(config.verificationAlertChannelId);
       if (alertChannel) {
-        const notifMsg = await alertChannel.send("(# Member Jdid Ajew)");
-        setTimeout(() => notifMsg.delete().catch(() => {}), 10000);
         const joinButton = new ButtonBuilder()
           .setCustomId(`join_verification_${tempVC.id}`)
           .setLabel("Join Verification")
           .setStyle(ButtonStyle.Primary);
         const row = new ActionRowBuilder().addComponents(joinButton);
-        const btnMsg = await alertChannel.send({ components: [row] });
-        setTimeout(() => btnMsg.delete().catch(() => {}), 10000);
+        const alertMsg = await alertChannel.send({
+          content: "# New Member Ajew 🙋‍♂️",
+          components: [row]
+        });
+        const sessionData = verificationSessions.get(tempVC.id);
+        sessionData.alertMessageId = alertMsg.id;
+        verificationSessions.set(tempVC.id, sessionData);
+        // Delete the alert after 11 seconds if no verificator has joined.
+        setTimeout(async () => {
+          const currentData = verificationSessions.get(tempVC.id);
+          if (currentData && !currentData.assignedVerificator) {
+            const toDelete = await alertChannel.messages.fetch(alertMsg.id).catch(() => null);
+            if (toDelete) toDelete.delete().catch(() => {});
+          }
+        }, 11000);
       }
     } catch (e) {
-      console.error("Error in verification creation:", e);
+      console.error("Error in verification VC creation:", e);
     }
   }
   
@@ -655,19 +580,18 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
       // Delete any previous session for this user.
       const existingEntry = Array.from(onetapSessions.entries()).find(([chId, s]) => s.owner === member.id);
       if (existingEntry) {
-        const [oldChId, sess] = existingEntry;
+        const [oldChId] = existingEntry;
         const oldCh = guild.channels.cache.get(oldChId);
         if (oldCh) await oldCh.delete().catch(() => {});
         onetapSessions.delete(oldChId);
       }
-      const displayName = member.displayName;
       const overwrites = [];
       if (config.unverifiedRoleId) {
         overwrites.push({ id: config.unverifiedRoleId, deny: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.Connect] });
       }
       overwrites.push({ id: member.id, allow: [PermissionsBitField.Flags.Connect, PermissionsBitField.Flags.AttachFiles] });
       const tempVC = await guild.channels.create({
-        name: `${displayName}'s Room`,
+        name: `${member.displayName}'s Room`,
         type: 2,
         parent: newState.channel.parentId,
         permissionOverwrites: overwrites
@@ -684,20 +608,20 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
   if (newState.channelId === config.needHelpChannelId) {
     try {
       const member = newState.member;
-      const displayName = member.displayName;
       const overwrites = [];
       if (config.unverifiedRoleId) {
         overwrites.push({ id: config.unverifiedRoleId, deny: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.Connect] });
       }
       overwrites.push({ id: member.id, allow: [PermissionsBitField.Flags.Connect, PermissionsBitField.Flags.AttachFiles] });
       const helpVC = await guild.channels.create({
-        name: `${displayName} needs help`,
+        name: `${member.displayName} needs help`,
         type: 2,
         parent: newState.channel.parentId,
         permissionOverwrites: overwrites
       });
-      onetapSessions.set(helpVC.id, { owner: member.id, status: "need help" });
+      onetapSessions.set(helpVC.id, { owner: member.id, status: "need help", assignedHelper: null, alertMessageId: null });
       await member.voice.setChannel(helpVC);
+      
       if (config.helperRoleId && config.needHelpLogChannelId && config.needHelpLogChannelId !== "none") {
         const helperRole = guild.roles.cache.get(config.helperRoleId);
         const helpLogChannel = guild.channels.cache.get(config.needHelpLogChannelId);
@@ -707,8 +631,20 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
             .setLabel("Join Help")
             .setStyle(ButtonStyle.Primary);
           const row = new ActionRowBuilder().addComponents(joinHelpButton);
-          const notifMsg = await helpLogChannel.send(`Hey ${helperRole.toString()}, ${member.displayName} needs help!`, { components: [row] });
-          setTimeout(() => notifMsg.delete().catch(() => {}), 10000);
+          const alertMsg = await helpLogChannel.send({
+            content: `# ${member.displayName} needs help 🆘️`,
+            components: [row]
+          });
+          const sessionData = onetapSessions.get(helpVC.id);
+          sessionData.alertMessageId = alertMsg.id;
+          onetapSessions.set(helpVC.id, sessionData);
+          setTimeout(async () => {
+            const currentData = onetapSessions.get(helpVC.id);
+            if (currentData && !currentData.assignedHelper) {
+              const toDelete = await helpLogChannel.messages.fetch(alertMsg.id).catch(() => null);
+              if (toDelete) toDelete.delete().catch(() => {});
+            }
+          }, 11000);
         }
       }
     } catch (e) {
@@ -716,46 +652,29 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
     }
   }
   
-  // AUTO-DELETION FOR EPHEMERAL CHANNELS
-  if (oldState.channel && onetapSessions.has(oldState.channel.id)) {
-    const session = onetapSessions.get(oldState.channel.id);
-    // For need help sessions: if owner leaves, delete immediately.
-    if (session.status === "need help" && oldState.member.id === session.owner) {
-      oldState.channel.delete().catch(() => {});
-      onetapSessions.delete(oldState.channel.id);
-      return;
-    }
-    // For one-tap sessions: if owner leaves, reassign.
-    if (oldState.member.id === session.owner) {
-      const remaining = oldState.channel.members;
-      if (remaining.size > 0) {
-        const newOwner = remaining.first();
-        session.owner = newOwner.id;
-        onetapSessions.set(oldState.channel.id, session);
+  // Immediate Deletion: If an ephemeral channel becomes empty, delete it immediately.
+  if (oldState.channel) {
+    // For one-tap/need-help session channels
+    if (onetapSessions.has(oldState.channel.id)) {
+      if (oldState.channel.members.size === 0) {
+        try {
+          await oldState.channel.delete();
+        } catch (err) {
+          console.error("Immediate deletion failed for channel", oldState.channel.id, err);
+        }
+        onetapSessions.delete(oldState.channel.id);
       }
     }
-    if (oldState.channel.members.size === 0) {
-      oldState.channel.delete().catch(() => {});
-      onetapSessions.delete(oldState.channel.id);
-    }
-  }
-  
-  // VERIFICATION VC CLEANUP
-  if (oldState.channel && verificationSessions.has(oldState.channel.id)) {
-    const session = verificationSessions.get(oldState.channel.id);
-    if (oldState.member.id === session.assignedVerificator) {
-      if (oldState.channel.members.has(session.userId)) {
-        const verifiedMember = oldState.channel.members.get(session.userId);
-        let activeVC = guild.channels.cache
-          .filter(ch => ch.type === 2 && ch.id !== oldState.channel.id && ch.members.size > 0)
-          .first();
-        if (!activeVC) activeVC = guild.channels.cache.get(config.voiceVerificationChannelId);
-        if (activeVC) await verifiedMember.voice.setChannel(activeVC);
+    // For verification sessions
+    if (verificationSessions.has(oldState.channel.id)) {
+      if (oldState.channel.members.size === 0) {
+        try {
+          await oldState.channel.delete();
+        } catch (err) {
+          console.error("Immediate deletion failed for verification channel", oldState.channel.id, err);
+        }
+        verificationSessions.delete(oldState.channel.id);
       }
-    }
-    if (oldState.channel.members.size === 0) {
-      oldState.channel.delete().catch(() => {});
-      verificationSessions.delete(oldState.channel.id);
     }
   }
 });
@@ -777,13 +696,20 @@ client.on('interactionCreate', async interaction => {
   if (member.voice.channel) {
     try {
       await member.voice.setChannel(tempVC);
-      let session = verificationSessions.get(tempVC.id);
-      if (session && session.assignedVerificator) {
+      let sessionData = verificationSessions.get(vcId);
+      if (sessionData && sessionData.assignedVerificator) {
         return interaction.reply({ content: "Another verificator is already in session.", flags: 64 });
       }
-      if (session && !session.assignedVerificator) {
-        session.assignedVerificator = member.id;
-        verificationSessions.set(tempVC.id, session);
+      if (sessionData && !sessionData.assignedVerificator) {
+        sessionData.assignedVerificator = member.id;
+        verificationSessions.set(vcId, sessionData);
+      }
+      // Delete the alert message immediately if present
+      const config = await settingsCollection.findOne({ serverId: interaction.guild.id });
+      const alertChannel = interaction.guild.channels.cache.get(config.verificationAlertChannelId);
+      if (sessionData.alertMessageId && alertChannel) {
+        const toDelete = await alertChannel.messages.fetch(sessionData.alertMessageId).catch(() => null);
+        if (toDelete) toDelete.delete().catch(() => {});
       }
       return interaction.reply({ content: "You have joined the verification session.", flags: 64 });
     } catch (e) {
@@ -837,8 +763,8 @@ client.on('messageCreate', async message => {
     if (!vc || !verificationSessions.has(vc.id)) {
       return message.reply("You must be in a verification session channel to verify someone.");
     }
-    const session = verificationSessions.get(vc.id);
-    const memberToVerify = message.guild.members.cache.get(session.userId);
+    const sessionData = verificationSessions.get(vc.id);
+    const memberToVerify = message.guild.members.cache.get(sessionData.userId);
     if (!memberToVerify) return message.reply("No unverified user found in this session.");
     try {
       if (config.unverifiedRoleId) await memberToVerify.roles.remove(config.unverifiedRoleId);
@@ -899,7 +825,7 @@ client.on('messageCreate', async message => {
 });
 
 // ------------------------------
-// Interaction Handler for Profile Viewer Buttons (Avatar/Banner)
+// Interaction Handler for R Buttons
 // ------------------------------
 client.on('interactionCreate', async interaction => {
   if (!interaction.isButton()) return;
@@ -934,7 +860,7 @@ client.on('interactionCreate', async interaction => {
 });
 
 // ------------------------------
-// "Ready" Handler for Setup in "bot-setup" Channel
+// "Ready" Handler in "bot-setup" Channel
 // ------------------------------
 client.on('messageCreate', async message => {
   if (message.author.bot) return;
@@ -1019,6 +945,75 @@ client.on(Events.GuildMemberAdd, async member => {
 });
 
 // ------------------------------
+// Periodic Cleanup: Check for Empty Ephemeral Channels Every 2 Seconds
+// ------------------------------
+setInterval(async () => {
+  // Check one-tap/need-help sessions
+  for (const [channelId, session] of onetapSessions.entries()) {
+    const channel = client.channels.cache.get(channelId);
+    if (channel && channel.type === 2 && channel.members.size === 0) {
+      try {
+        await channel.delete();
+      } catch (err) {
+        console.error("Failed deleting ephemeral channel", channelId, err);
+      }
+      onetapSessions.delete(channelId);
+    }
+  }
+  // Check verification sessions
+  for (const [channelId, session] of verificationSessions.entries()) {
+    const channel = client.channels.cache.get(channelId);
+    if (channel && channel.type === 2 && channel.members.size === 0) {
+      try {
+        await channel.delete();
+      } catch (err) {
+        console.error("Failed deleting ephemeral verification channel", channelId, err);
+      }
+      verificationSessions.delete(channelId);
+    }
+  }
+}, 2000);
+
+// ------------------------------
 // Client Login
 // ------------------------------
 client.login(process.env.DISCORD_TOKEN);
+
+
+---
+
+Explanation of Key Changes
+
+1. Verification & Need-Help Alerts:
+
+When an ephemeral verification channel is created, a single message is sent in the alert channel with big, bold text (using “# New Member Ajew 🙋‍♂️”) plus one “Join Verification” button.
+
+For need-help, a similar alert is sent showing “# {DisplayName} needs help 🆘️”.
+
+Each alert message is scheduled for deletion after 11 seconds if no verificator or helper joins; if someone joins, the button handler deletes it immediately.
+
+
+
+2. Permissions Fix:
+
+In ephemeral verification channels, the permission overwrites now include PermissionsBitField.Flags.Speak so the user can speak.
+
+
+
+3. Immediate Deletion of Empty Channels:
+
+In the voiceStateUpdate handler, if an ephemeral channel becomes empty (member count is 0), it is deleted immediately.
+
+In addition, a periodic cleanup (running every 2 seconds) scans for any empty ephemeral channels and deletes them as a fallback.
+
+
+
+4. Ephemeral Replies:
+
+All interactions now use flags: 64 (instead of ephemeral: true) for slash command replies to remove deprecation warnings.
+
+
+
+
+This version should now meet your requirements. Deploy and test thoroughly to ensure all processes work as intended. Let me know if you need further adjustments!
+

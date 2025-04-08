@@ -1,31 +1,32 @@
 // index.js
-// Franco's Armada Bot – Final Complete Code with Full Features & Auto-Cleanup
+// Franco's Armada Bot – Final Complete Code with Debug Logging for Verification Commands
 // FEATURES:
 // • Connects to MongoDB for per‑server settings (language, prefix, role/channel IDs, custom welcome message, etc.).
-// • On guild join, creates "bot‑setup" and "bot‑config" channels visible only to the owner.
+// • On guild join, creates "bot‑setup" and "bot‑config" channels (visible only to the owner).
 // • New members automatically receive the unverified role.
-// • Interactive multi‑language setup triggered by the owner typing “ready” in the “bot‑setup” channel.
+// • Interactive multi‑language setup (English, Darija, Spanish, Russian, French) triggered by typing "ready" in "bot‑setup".
 // • Verification Process:
-//     – When an unverified user joins the designated permanent verification channel,
-//        an ephemeral VC named “Verify – [displayName]” (userLimit: 2) is created with permissions to Connect, Speak, and AttachFiles.
-//     – A single alert is sent in the verification alert channel with big bold text starting with “#” (e.g. “# New Member Ajew 🙋‍♂️”) plus one “Join Verification” button.
-//         • If no verificator joins after 11 seconds, the alert message deletes; if one joins, it deletes immediately.
-//     – In that VC, the verificator types “+boy” or “+girl” (with no user mention) to verify the unverified member.
-//     – When the verificator leaves, the bot moves the verified user to an available channel (or back to the permanent VC).
+//     – When an unverified user joins the designated permanent verification channel, an ephemeral VC named 
+//        "Verify – [displayName]" (userLimit: 2) is created with permissions to Connect, Speak, and AttachFiles.
+//     – A single alert is sent in the verification alert channel with big bold text (e.g. "# New Member Ajew 🙋‍♂️")
+//        plus one "Join Verification" button. The alert auto‑deletes after 11 seconds if no verificator joins.
+//     – In that VC, the verificator simply types “+boy” or “+girl” (without mentioning the user) in the channel’s built‑in chat to verify.
+//     – When the verificator leaves, the bot moves the verified user to an available channel.
 // • One‑Tap Process:
-//     – When a verified user joins the designated one‑tap channel, an ephemeral VC named “[displayName]’s Room” is created.
-//     – If the user already had a one‑tap session, it is deleted before creating a new one.
-//     – The ephemeral VC denies the unverified role from viewing/connecting and allows the user to use the voice channel’s built‑in text chat.
+//     – When a verified user joins the designated one‑tap channel, an ephemeral VC named "[displayName]'s Room" is created.
+//     – If a previous one‑tap session exists for that user, it is deleted first.
+//     – The ephemeral VC’s permission overwrites prevent unverified users from connecting.
 // • Need‑Help Process:
-//     – When a member joins the designated need‑help channel, an ephemeral VC named “[displayName] needs help” is created.
-//     – A single alert is sent in the need‑help log channel with big bold text (e.g. “# Franco 🔱 needs help 🆘️”) plus a “Join Help” button.
-//         • The alert deletes after 11 seconds if no helper joins; if someone does join, it deletes immediately.
-//     – When the need‑help session owner leaves, the ephemeral channel is deleted immediately.
-// • Global slash commands (e.g. /setprefix, /setwelcome, /showwelcome, /jail, /jinfo, /unban, /binfo, /topvrf, /toponline) are available to admins/owners.
-// • Session management slash commands (e.g. /claim, /mute, /unmute, /lock, /unlock, /limit, /reject, /perm, /hide, /unhide, /transfer, /name, /status, /help) are available for users within ephemeral sessions.
-// • The “R” command displays a user’s profile picture (with Avatar/Banner buttons) in one response.
-// • Any ephemeral channel (verification, one‑tap, or need‑help) is deleted immediately when it becomes empty,
-//   and a periodic cleanup runs every 2 seconds as a final fallback.
+//     – When a member joins the designated need‑help channel, an ephemeral VC named "[displayName] needs help" is created.
+//     – A single alert is sent in the need‑help log channel in big bold text (e.g. "# Franco 🔱 needs help 🆘️")
+//        plus a "Join Help" button. The alert auto‑deletes after 11 seconds or immediately if a helper joins.
+//     – When the need‑help session owner leaves, the channel is deleted immediately.
+// • Global slash commands (e.g. /setprefix, /setwelcome, /showwelcome, /jail, /jinfo, /unban, /binfo, /topvrf, /toponline)
+//     are available to admins/owners.
+// • Session management commands (/claim, /mute, /unmute, /lock, /unlock, /limit, /reject, /perm, /hide, /unhide, /transfer, /name, /status, /help)
+//     are available within ephemeral sessions.
+// • The "R" command displays a user's profile picture (with Avatar/Banner buttons) in a single response.
+// • Empty ephemeral channels are deleted immediately upon being empty, plus a periodic cleanup every 2 seconds.
 
 require('dotenv').config();
 const {
@@ -335,7 +336,8 @@ client.on('interactionCreate', async interaction => {
   
   const globalCmds = ["setprefix","setwelcome","showwelcome","jail","jinfo","unban","binfo","topvrf","toponline"];
   if (globalCmds.includes(commandName)) {
-    if (!interaction.memberPermissions.has(PermissionsBitField.Flags.Administrator) && interaction.member.id !== interaction.guild.ownerId) {
+    if (!interaction.memberPermissions.has(PermissionsBitField.Flags.Administrator) &&
+        interaction.member.id !== interaction.guild.ownerId) {
       return interaction.reply({ content: "You are not allowed to use this command.", flags: 64 });
     }
     if (commandName === "setprefix") {
@@ -416,7 +418,9 @@ client.on('interactionCreate', async interaction => {
     return;
   }
   
-  // Otherwise, assume session commands (one-tap/need-help)
+  // ------------------------------
+  // Session Commands (One-Tap / Need-Help)
+  // ------------------------------
   const member = interaction.member;
   const currentVC = member.voice.channel;
   if (!currentVC || !onetapSessions.has(currentVC.id)) {
@@ -574,248 +578,7 @@ client.on('interactionCreate', async interaction => {
 });
 
 // ------------------------------
-// VoiceStateUpdate Handler for Verification, One-Tap, and Need Help
-// ------------------------------
-client.on('voiceStateUpdate', async (oldState, newState) => {
-  const guild = newState.guild || oldState.guild;
-  const config = await settingsCollection.findOne({ serverId: guild.id });
-  if (!config) return;
-  
-  // VERIFICATION PROCESS
-  if (newState.channelId === config.voiceVerificationChannelId) {
-    try {
-      const member = newState.member;
-      const unverifiedRole = guild.roles.cache.get(config.unverifiedRoleId);
-      if (!unverifiedRole) return;
-      if (!member.roles.cache.has(unverifiedRole.id)) return;
-      // Create ephemeral verification VC with Connect, Speak, and AttachFiles permissions.
-      const tempVC = await guild.channels.create({
-        name: `Verify – ${member.displayName}`,
-        type: 2,
-        parent: newState.channel.parentId,
-        userLimit: 2,
-        permissionOverwrites: [
-          { 
-            id: member.id,
-            allow: [
-              PermissionsBitField.Flags.Connect,
-              PermissionsBitField.Flags.Speak,
-              PermissionsBitField.Flags.AttachFiles
-            ]
-          }
-        ]
-      });
-      await member.voice.setChannel(tempVC);
-      verificationSessions.set(tempVC.id, { userId: member.id, assignedVerificator: null, alertMessageId: null });
-      
-      // Send a single verification alert with big bold text and a button.
-      const alertChannel = guild.channels.cache.get(config.verificationAlertChannelId);
-      if (alertChannel) {
-        const joinButton = new ButtonBuilder()
-          .setCustomId(`join_verification_${tempVC.id}`)
-          .setLabel("Join Verification")
-          .setStyle(ButtonStyle.Primary);
-        const row = new ActionRowBuilder().addComponents(joinButton);
-        const alertMsg = await alertChannel.send({
-          content: "# New Member Ajew 🙋‍♂️",
-          components: [row]
-        });
-        const sessionData = verificationSessions.get(tempVC.id);
-        sessionData.alertMessageId = alertMsg.id;
-        verificationSessions.set(tempVC.id, sessionData);
-        setTimeout(async () => {
-          const currentData = verificationSessions.get(tempVC.id);
-          if (currentData && !currentData.assignedVerificator) {
-            const toDelete = await alertChannel.messages.fetch(alertMsg.id).catch(() => null);
-            if (toDelete) toDelete.delete().catch(() => {});
-          }
-        }, 11000);
-      }
-    } catch (e) {
-      console.error("Error in verification VC creation:", e);
-    }
-  }
-  
-  // ONE-TAP PROCESS
-  if (newState.channelId === config.oneTapChannelId) {
-    try {
-      const member = newState.member;
-      const isVerified = member.roles.cache.has(config.verifiedRoleId) || member.roles.cache.has(config.verifiedGirlRoleId);
-      if (!isVerified) return;
-      // Delete any previous one-tap session for this user.
-      const existingEntry = Array.from(onetapSessions.entries()).find(([chId, s]) => s.owner === member.id);
-      if (existingEntry) {
-        const [oldChId] = existingEntry;
-        const oldChannel = guild.channels.cache.get(oldChId);
-        if (oldChannel) await oldChannel.delete().catch(() => {});
-        onetapSessions.delete(oldChId);
-      }
-      const overwrites = [];
-      if (config.unverifiedRoleId) {
-        overwrites.push({ id: config.unverifiedRoleId, deny: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.Connect] });
-      }
-      overwrites.push({ id: member.id, allow: [PermissionsBitField.Flags.Connect, PermissionsBitField.Flags.AttachFiles] });
-      const tempVC = await guild.channels.create({
-        name: `${member.displayName}'s Room`,
-        type: 2,
-        parent: newState.channel.parentId,
-        permissionOverwrites: overwrites
-      });
-      onetapSessions.set(tempVC.id, { owner: member.id, rejectedUsers: [], status: "" });
-      await member.voice.setChannel(tempVC);
-      console.log(`One-tap VC created for ${member.displayName}: ${tempVC.id}`);
-    } catch (e) {
-      console.error("Error in one-tap creation:", e);
-    }
-  }
-  
-  // NEED HELP PROCESS
-  if (newState.channelId === config.needHelpChannelId) {
-    try {
-      const member = newState.member;
-      const overwrites = [];
-      if (config.unverifiedRoleId) {
-        overwrites.push({ id: config.unverifiedRoleId, deny: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.Connect] });
-      }
-      overwrites.push({ id: member.id, allow: [PermissionsBitField.Flags.Connect, PermissionsBitField.Flags.AttachFiles] });
-      const helpVC = await guild.channels.create({
-        name: `${member.displayName} needs help`,
-        type: 2,
-        parent: newState.channel.parentId,
-        permissionOverwrites: overwrites
-      });
-      onetapSessions.set(helpVC.id, { owner: member.id, status: "need help", assignedHelper: null, alertMessageId: null });
-      await member.voice.setChannel(helpVC);
-      
-      if (config.helperRoleId && config.needHelpLogChannelId && config.needHelpLogChannelId !== "none") {
-        const helperRole = guild.roles.cache.get(config.helperRoleId);
-        const helpLogChannel = guild.channels.cache.get(config.needHelpLogChannelId);
-        if (helperRole && helpLogChannel) {
-          const joinHelpButton = new ButtonBuilder()
-            .setCustomId(`join_help_${helpVC.id}`)
-            .setLabel("Join Help")
-            .setStyle(ButtonStyle.Primary);
-          const row = new ActionRowBuilder().addComponents(joinHelpButton);
-          const alertMsg = await helpLogChannel.send({
-            content: `# ${member.displayName} needs help 🆘️`,
-            components: [row]
-          });
-          const sessionData = onetapSessions.get(helpVC.id);
-          sessionData.alertMessageId = alertMsg.id;
-          onetapSessions.set(helpVC.id, sessionData);
-          setTimeout(async () => {
-            const currentData = onetapSessions.get(helpVC.id);
-            if (currentData && !currentData.assignedHelper) {
-              const toDelete = await helpLogChannel.messages.fetch(alertMsg.id).catch(() => null);
-              if (toDelete) toDelete.delete().catch(() => {});
-            }
-          }, 11000);
-        }
-      }
-    } catch (e) {
-      console.error("Error in need help creation:", e);
-    }
-  }
-  
-  // Immediate Deletion: When an ephemeral channel becomes empty, delete it immediately.
-  if (oldState.channel) {
-    if (onetapSessions.has(oldState.channel.id)) {
-      if (oldState.channel.members.size === 0) {
-        try {
-          await oldState.channel.delete();
-        } catch (err) {
-          console.error("Failed immediate deletion for channel", oldState.channel.id, err);
-        }
-        onetapSessions.delete(oldState.channel.id);
-      }
-    }
-    if (verificationSessions.has(oldState.channel.id)) {
-      if (oldState.channel.members.size === 0) {
-        try {
-          await oldState.channel.delete();
-        } catch (err) {
-          console.error("Failed immediate deletion for verification channel", oldState.channel.id, err);
-        }
-        verificationSessions.delete(oldState.channel.id);
-      }
-    }
-  }
-});
-
-// ------------------------------
-// "Join Verification" Button Handler
-// ------------------------------
-client.on('interactionCreate', async interaction => {
-  if (!interaction.isButton()) return;
-  if (!interaction.customId.startsWith("join_verification_")) return;
-  
-  const vcId = interaction.customId.split("_").pop();
-  const tempVC = interaction.guild.channels.cache.get(vcId);
-  if (!tempVC) return interaction.reply({ content: "Verification session expired.", flags: 64 });
-  if (tempVC.members.size >= 2) {
-    return interaction.reply({ content: "Verification session is full.", flags: 64 });
-  }
-  const member = interaction.member;
-  if (member.voice.channel) {
-    try {
-      await member.voice.setChannel(tempVC);
-      let sessionData = verificationSessions.get(vcId);
-      if (sessionData && sessionData.assignedVerificator) {
-        return interaction.reply({ content: "Another verificator is already in session.", flags: 64 });
-      }
-      if (sessionData && !sessionData.assignedVerificator) {
-        sessionData.assignedVerificator = member.id;
-        verificationSessions.set(vcId, sessionData);
-      }
-      // Delete alert message if present
-      const config = await settingsCollection.findOne({ serverId: interaction.guild.id });
-      const alertChannel = interaction.guild.channels.cache.get(config.verificationAlertChannelId);
-      if (sessionData.alertMessageId && alertChannel) {
-        const toDelete = await alertChannel.messages.fetch(sessionData.alertMessageId).catch(() => null);
-        if (toDelete) toDelete.delete().catch(() => {});
-      }
-      return interaction.reply({ content: "You have joined the verification session.", flags: 64 });
-    } catch (e) {
-      console.error(e);
-      return interaction.reply({ content: "Failed to move you.", flags: 64 });
-    }
-  } else {
-    try {
-      const invite = await tempVC.createInvite({ maxAge: 300, maxUses: 1 });
-      return interaction.reply({ content: `Join via link: ${invite.url}`, flags: 64 });
-    } catch(e) {
-      console.error(e);
-      return interaction.reply({ content: "Failed to create invite.", flags: 64 });
-    }
-  }
-});
-
-// ------------------------------
-// "Join Help" Button Handler
-// ------------------------------
-client.on('interactionCreate', async interaction => {
-  if (!interaction.isButton()) return;
-  if (!interaction.customId.startsWith("join_help_")) return;
-  
-  const vcId = interaction.customId.split("_").pop();
-  const helpVC = interaction.guild.channels.cache.get(vcId);
-  if (!helpVC) return interaction.reply({ content: "Help session expired.", flags: 64 });
-  try {
-    if (interaction.member.voice.channel) {
-      await interaction.member.voice.setChannel(helpVC);
-      return interaction.reply({ content: "You have joined the help session.", flags: 64 });
-    } else {
-      const invite = await helpVC.createInvite({ maxAge: 300, maxUses: 1 });
-      return interaction.reply({ content: `Join using this link: ${invite.url}`, flags: 64 });
-    }
-  } catch (e) {
-    console.error(e);
-    return interaction.reply({ content: "Failed to move you to help.", flags: 64 });
-  }
-});
-
-// ------------------------------
-// +boy / +girl Verification Command Handler
+// Debug Logging for +boy / +girl Verification Commands
 // ------------------------------
 client.on('messageCreate', async message => {
   if (message.author.bot) return;
@@ -823,6 +586,9 @@ client.on('messageCreate', async message => {
     const config = await settingsCollection.findOne({ serverId: message.guild.id });
     if (!config) return message.reply("Bot is not configured for this server.");
     const vc = message.member.voice.channel;
+    console.log("[DEBUG] Verification command from", message.author.tag);
+    console.log("[DEBUG] Voice Channel ID:", vc ? vc.id : "None");
+    console.log("[DEBUG] Verification Sessions keys:", [...verificationSessions.keys()]);
     if (!vc || !verificationSessions.has(vc.id)) {
       return message.reply("You must be in a verification session channel to verify someone.");
     }
@@ -977,7 +743,7 @@ client.on(Events.GuildCreate, async guild => {
         { id: owner.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] }
       ]
     });
-    // Language selection buttons (all languages)
+    // Language selection buttons
     const englishButton = new ButtonBuilder().setCustomId('lang_english').setLabel('English').setStyle(ButtonStyle.Primary);
     const darijaButton = new ButtonBuilder().setCustomId('lang_darija').setLabel('Darija').setStyle(ButtonStyle.Primary);
     const spanishButton = new ButtonBuilder().setCustomId('lang_spanish').setLabel('Spanish').setStyle(ButtonStyle.Primary);

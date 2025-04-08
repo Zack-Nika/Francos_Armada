@@ -8,7 +8,7 @@
 // • Verification Process:
 //     – When an unverified user joins the permanent verification channel, an ephemeral VC named "Verify – [displayName]" (userLimit: 2) is created and the user is moved there.
 //     – A plain‑text notification ("(# Member Jdid 🙋‍♂️)") plus a "Join Verification" button is sent to the alert channel (both auto-deleted after 10 seconds).
-//     – When a verificator clicks the button (if the VC isn’t full and no verificator is assigned), they’re moved in and their ID is stored.
+//     – When a verificator clicks the button (if the VC isn’t full and if no verificator is already assigned), they’re moved in and their ID is stored.
 //     – In that VC, the verificator types "+boy" or "+girl" (no mention required) to verify the user (removing the unverified role and adding the corresponding verified role).
 //     – When the verificator leaves, the bot moves the verified user to the nearest open VC (or falls back to the verification channel).
 //     – Additionally, if a verification log channel is configured, a log message is sent there.
@@ -17,8 +17,8 @@
 //     – The room is open by default and auto‑deletes when empty.
 // • New "Need Help" One‑Tap Process:
 //     – When a member joins the designated need-help channel, the bot creates a temporary VC named "[displayName] needs help".
-//     – It then pings all users with the helper role in a designated need-help log channel if configured.
-// • Global slash commands (e.g. /setprefix, /setwelcome, /showwelcome, /jail, /jinfo, /unban, /binfo, /topvrf, /toponline) are for admins/owners only.
+//     – It then pings all users with the helper role in a designated need-help log channel (if configured).
+// • Global slash commands (e.g. /setprefix, /setwelcome, /showwelcome, /jail, /jinfo, /unban, /binfo, /topvrf, /toponline) work globally (admins/owners only).
 // • One‑Tap management slash commands (e.g. /claim, /mute, /unmute, /lock, /unlock, /limit, /reject, /perm, /hide, /unhide, /transfer, /name, /status, /help) require that the user is in a one‑tap room and respond with blue embed messages.
 // • The "R" command shows a user’s profile picture with Avatar/Banner buttons.
 
@@ -227,6 +227,27 @@ async function runSetup(ownerId, setupChannel, guildId, lang) {
 }
 
 // ------------------------------
+// Language Selection Button Handler
+// ------------------------------
+client.on('interactionCreate', async interaction => {
+  if (interaction.isButton() && interaction.customId.startsWith('lang_')) {
+    const langChosen = interaction.customId.split('_')[1]; // e.g. "english", "darija", etc.
+    try {
+      await settingsCollection.updateOne(
+        { serverId: interaction.guild.id },
+        { $set: { language: langChosen } },
+        { upsert: true }
+      );
+      await interaction.reply({ content: `Language set to ${langChosen}! Type \`ready\` to begin setup.`, ephemeral: true });
+    } catch (err) {
+      console.error("Error setting language:", err);
+      await interaction.reply({ content: "Error setting language.", ephemeral: true });
+    }
+    return;
+  }
+});
+
+// ------------------------------
 // Global Slash Commands Registration (Global and One-Tap Commands)
 // ------------------------------
 client.commands = new Collection();
@@ -329,7 +350,7 @@ const { Routes: Routes2 } = require('discord-api-types/v10');
 })();
 
 // ------------------------------
-// Interaction Handler for Slash Commands – Separate Global and One-Tap Commands
+// Slash Command Interaction Handler – Separate Global and One-Tap Commands
 // ------------------------------
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;

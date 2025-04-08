@@ -8,8 +8,8 @@
 // • Verification Process:
 //     – When an unverified user joins the designated verification channel, an ephemeral VC (named "Verify – [displayName]")
 //       is created (userLimit: 2) and the user is moved there.
-//     – A plain‑text notification (for example, "(# Member Jdid Ajew)") and a "Join Verification" button are sent to the
-//       configured alert channel. Both messages are auto‑deleted after 10 seconds.
+//     – A plain‑text notification (e.g. "(# Member Jdid Ajew)") and a "Join Verification" button are sent to the
+//       configured alert channel. Both messages auto‑delete after 10 seconds.
 //     – When a verificator clicks the button (if not already assigned), they’re moved into the VC and recorded.
 //     – In that VC, the verificator types "+boy" or "+girl" to verify the member.
 //     – Upon verification, a success embed is sent (without any extra footer text).
@@ -18,16 +18,19 @@
 //     – When a verified user joins the designated one‑tap channel, an ephemeral VC (named "[displayName]'s Room")
 //       is created with overwrites so that the unverified role cannot view or connect.
 //     – Any previous one‑tap session owned by that user is deleted first.
-//     – No separate text channel is created – users use the voice channel's built‑in chat.
+//     – No separate text channel is created – users use the voice channel's built‑in text chat (if available),
+//       with permission to attach files.
 // • Need Help Process:
-//     – When a member joins the designated need-help channel, an ephemeral VC (named "[displayName] needs help") is created.
+//     – When a member joins the designated need‑help channel, an ephemeral VC (named "[displayName] needs help")
+//       is created.
 //     – A notification is sent in the help log channel that pings the helper role and includes a "Join Help" button,
 //       which auto‑deletes after 10 seconds.
-//     – If the need-help session owner leaves, the channel is immediately deleted.
-// • Global slash commands (e.g. /setprefix, /setwelcome, /showwelcome, /jail, /jinfo, /unban, /binfo, etc.) are available to admins/owners.
+//     – If the need‑help session owner leaves, the channel is immediately deleted.
+// • Global slash commands (e.g. /setprefix, /setwelcome, /showwelcome, /jail, /jinfo, /unban, /binfo, /topvrf, /toponline)
+//     are available to administrators/owners.
 // • One‑Tap management slash commands (e.g. /claim, /mute, /unmute, /lock, /unlock, /limit, /reject, /perm, /hide, /unhide, /transfer, /name, /status, /help)
 //     are available to members in a one‑tap session.
-// • The "R" command displays a user's profile picture with Avatar/Banner buttons (only once).
+// • The "R" command shows a user's profile picture (with Avatar/Banner buttons) only once.
 
 require('dotenv').config();
 const {
@@ -175,10 +178,10 @@ client.on('interactionCreate', async interaction => {
         { $set: { language: langChosen } },
         { upsert: true }
       );
-      await interaction.reply({ content: `Language set to ${langChosen}! Type \`ready\` to begin setup.`, ephemeral: true });
+      await interaction.reply({ content: `Language set to ${langChosen}! Type \`ready\` to begin setup.`, flags: 64 });
     } catch (err) {
       console.error("Error setting language:", err);
-      await interaction.reply({ content: "Error setting language.", ephemeral: true });
+      await interaction.reply({ content: "Error setting language.", flags: 64 });
     }
   }
 });
@@ -255,7 +258,7 @@ const slashCommands = [
   new SlashCommandBuilder().setName('unhide').setDescription('Unhide your tap'),
   new SlashCommandBuilder()
     .setName('transfer')
-    .setDescription('Transfer tap ownership')
+    .setDescription('Transfer ownership of your tap')
     .addUserOption(o => o.setName('target').setDescription('User to transfer to').setRequired(true)),
   new SlashCommandBuilder()
     .setName('name')
@@ -291,38 +294,38 @@ client.on('interactionCreate', async interaction => {
   const { commandName } = interaction;
   const config = await settingsCollection.findOne({ serverId: interaction.guild.id });
   if (!config) {
-    return interaction.reply({ content: "Bot is not configured for this server.", ephemeral: true });
+    return interaction.reply({ content: "Bot is not configured for this server.", flags: 64 });
   }
   const globalCommands = ["setprefix", "setwelcome", "showwelcome", "jail", "jinfo", "unban", "binfo", "topvrf", "toponline"];
   if (globalCommands.includes(commandName)) {
     if (!interaction.memberPermissions.has(PermissionsBitField.Flags.Administrator) && interaction.member.id !== interaction.guild.ownerId) {
-      return interaction.reply({ content: "You are not allowed to use this command.", ephemeral: true });
+      return interaction.reply({ content: "You are not allowed to use this command.", flags: 64 });
     }
     if (commandName === "setprefix") {
       const prefix = interaction.options.getString('prefix');
       try {
         await settingsCollection.updateOne({ serverId: interaction.guild.id }, { $set: { prefix } }, { upsert: true });
-        return interaction.reply({ content: `Prefix updated to ${prefix}.`, ephemeral: true });
+        return interaction.reply({ content: `Prefix updated to ${prefix}.`, flags: 64 });
       } catch (e) {
         console.error(e);
-        return interaction.reply({ content: "Failed to update prefix.", ephemeral: true });
+        return interaction.reply({ content: "Failed to update prefix.", flags: 64 });
       }
     } else if (commandName === "setwelcome") {
       const msg = interaction.options.getString('message');
       try {
         await settingsCollection.updateOne({ serverId: interaction.guild.id }, { $set: { customWelcome: msg } }, { upsert: true });
-        return interaction.reply({ content: "Welcome message updated!", ephemeral: true });
+        return interaction.reply({ content: "Welcome message updated!", flags: 64 });
       } catch (e) {
         console.error(e);
-        return interaction.reply({ content: "Failed to update welcome message.", ephemeral: true });
+        return interaction.reply({ content: "Failed to update welcome message.", flags: 64 });
       }
     } else if (commandName === "showwelcome") {
-      return interaction.reply({ content: `Current welcome message: ${config.customWelcome || "Default"}`, ephemeral: true });
+      return interaction.reply({ content: `Current welcome message: ${config.customWelcome || "Default"}`, flags: 64 });
     } else if (commandName === "jail") {
       const userid = interaction.options.getString('userid');
       const reason = interaction.options.getString('reason');
       let targetMember = await interaction.guild.members.fetch(userid).catch(() => null);
-      if (!targetMember) return interaction.reply({ content: "User not found.", ephemeral: true });
+      if (!targetMember) return interaction.reply({ content: "User not found.", flags: 64 });
       try {
         await targetMember.roles.set([]);
         if (config.jailRoleId && config.jailRoleId !== "none") {
@@ -336,19 +339,19 @@ client.on('interactionCreate', async interaction => {
           if (jailVC) await targetMember.voice.setChannel(jailVC);
         }
         jailData.set(targetMember.id, reason);
-        return interaction.reply({ content: `${targetMember.displayName} jailed for: ${reason}`, ephemeral: true });
+        return interaction.reply({ content: `${targetMember.displayName} jailed for: ${reason}`, flags: 64 });
       } catch (e) {
         console.error(e);
-        return interaction.reply({ content: "Failed to jail user.", ephemeral: true });
+        return interaction.reply({ content: "Failed to jail user.", flags: 64 });
       }
     } else if (commandName === "jinfo") {
       const userid = interaction.options.getString('userid');
       const info = jailData.get(userid) || "No jail reason found.";
-      return interaction.reply({ content: `Jail info for ${userid}: ${info}`, ephemeral: true });
+      return interaction.reply({ content: `Jail info for ${userid}: ${info}`, flags: 64 });
     } else if (commandName === "unban") {
       const userid = interaction.options.getString('userid');
       let targetMember = await interaction.guild.members.fetch(userid).catch(() => null);
-      if (!targetMember) return interaction.reply({ content: "User not found.", ephemeral: true });
+      if (!targetMember) return interaction.reply({ content: "User not found.", flags: 64 });
       try {
         if (config.jailRoleId && config.jailRoleId !== "none") {
           const jailRole = interaction.guild.roles.cache.get(config.jailRoleId);
@@ -357,99 +360,101 @@ client.on('interactionCreate', async interaction => {
           }
         }
         jailData.delete(targetMember.id);
-        return interaction.reply({ content: `${targetMember.displayName} unjailed.`, ephemeral: true });
+        return interaction.reply({ content: `${targetMember.displayName} unjailed.`, flags: 64 });
       } catch (e) {
         console.error(e);
-        return interaction.reply({ content: "Failed to unjail user.", ephemeral: true });
+        return interaction.reply({ content: "Failed to unjail user.", flags: 64 });
       }
     } else if (commandName === "binfo") {
       try {
         const bans = await interaction.guild.bans.fetch();
-        return interaction.reply({ content: `Total banned users: ${bans.size}`, ephemeral: true });
+        return interaction.reply({ content: `Total banned users: ${bans.size}`, flags: 64 });
       } catch (e) {
         console.error(e);
-        return interaction.reply({ content: "Failed to fetch ban info.", ephemeral: true });
+        return interaction.reply({ content: "Failed to fetch ban info.", flags: 64 });
       }
     } else if (commandName === "topvrf") {
-      return interaction.reply({ content: "Top verificators: [Coming soon]", ephemeral: true });
+      return interaction.reply({ content: "Top verificators: [Coming soon]", flags: 64 });
     } else if (commandName === "toponline") {
-      return interaction.reply({ content: "Top online users: [Coming soon]", ephemeral: true });
+      return interaction.reply({ content: "Top online users: [Coming soon]", flags: 64 });
     }
     return;
   }
 
-  // Otherwise, assume one-tap (or need-help) commands.
+  // One-Tap / Need Help Management commands (Require user to be in an ephemeral session)
   const member = interaction.member;
   const currentVC = member.voice.channel;
   if (!currentVC || !onetapSessions.has(currentVC.id)) {
-    return interaction.reply({ content: "You are not in an ephemeral session.", ephemeral: true });
+    return interaction.reply({ content: "You are not in an ephemeral session.", flags: 64 });
   }
   const session = onetapSessions.get(currentVC.id) || {};
-  
+
   if (commandName === "claim") {
-    if (session.owner === member.id) return interaction.reply({ content: "You already own this session.", ephemeral: true });
-    if (currentVC.members.has(session.owner)) return interaction.reply({ content: "Owner is still here; cannot claim ownership.", ephemeral: true });
+    if (session.owner === member.id)
+      return interaction.reply({ content: "You already own this session.", flags: 64 });
+    if (currentVC.members.has(session.owner))
+      return interaction.reply({ content: "Owner is still here; cannot claim ownership.", flags: 64 });
     session.owner = member.id;
     onetapSessions.set(currentVC.id, session);
-    return interaction.reply({ content: "You have claimed ownership.", ephemeral: true });
+    return interaction.reply({ content: "You have claimed ownership.", flags: 64 });
   }
   else if (commandName === "mute") {
     const target = interaction.options.getUser('target');
     const targetMember = interaction.guild.members.cache.get(target.id);
     if (!targetMember || targetMember.voice.channelId !== currentVC.id)
-      return interaction.reply({ content: "That user is not in your session.", ephemeral: true });
+      return interaction.reply({ content: "That user is not in your session.", flags: 64 });
     try {
       await targetMember.voice.setMute(true);
-      return interaction.reply({ content: `${targetMember.displayName} has been muted.`, ephemeral: true });
+      return interaction.reply({ content: `${targetMember.displayName} has been muted.`, flags: 64 });
     } catch (e) {
       console.error(e);
-      return interaction.reply({ content: "Failed to mute user.", ephemeral: true });
+      return interaction.reply({ content: "Failed to mute user.", flags: 64 });
     }
   }
   else if (commandName === "unmute") {
     const target = interaction.options.getUser('target');
     const targetMember = interaction.guild.members.cache.get(target.id);
     if (!targetMember || targetMember.voice.channelId !== currentVC.id)
-      return interaction.reply({ content: "That user is not in your session.", ephemeral: true });
+      return interaction.reply({ content: "That user is not in your session.", flags: 64 });
     try {
       await targetMember.voice.setMute(false);
-      return interaction.reply({ content: `${targetMember.displayName} has been unmuted.`, ephemeral: true });
+      return interaction.reply({ content: `${targetMember.displayName} has been unmuted.`, flags: 64 });
     } catch (e) {
       console.error(e);
-      return interaction.reply({ content: "Failed to unmute user.", ephemeral: true });
+      return interaction.reply({ content: "Failed to unmute user.", flags: 64 });
     }
   }
   else if (commandName === "lock") {
     try {
       await currentVC.permissionOverwrites.edit(interaction.guild.id, { Connect: false });
-      return interaction.reply({ content: "Session locked.", ephemeral: true });
+      return interaction.reply({ content: "Session locked.", flags: 64 });
     } catch (e) {
       console.error(e);
-      return interaction.reply({ content: "Failed to lock session.", ephemeral: true });
+      return interaction.reply({ content: "Failed to lock session.", flags: 64 });
     }
   }
   else if (commandName === "unlock") {
     try {
       await currentVC.permissionOverwrites.edit(interaction.guild.id, { Connect: true });
-      return interaction.reply({ content: "Session unlocked.", ephemeral: true });
+      return interaction.reply({ content: "Session unlocked.", flags: 64 });
     } catch (e) {
       console.error(e);
-      return interaction.reply({ content: "Failed to unlock session.", ephemeral: true });
+      return interaction.reply({ content: "Failed to unlock session.", flags: 64 });
     }
   }
   else if (commandName === "limit") {
     const number = interaction.options.getInteger('number');
     try {
       await currentVC.setUserLimit(number);
-      return interaction.reply({ content: `User limit set to ${number}.`, ephemeral: true });
+      return interaction.reply({ content: `User limit set to ${number}.`, flags: 64 });
     } catch (e) {
       console.error(e);
-      return interaction.reply({ content: "Failed to set user limit.", ephemeral: true });
+      return interaction.reply({ content: "Failed to set user limit.", flags: 64 });
     }
   }
   else if (commandName === "reject") {
     const target = interaction.options.getUser('target');
-    if (!target) return interaction.reply({ content: "Please mention a user.", ephemeral: true });
+    if (!target) return interaction.reply({ content: "Please mention a user.", flags: 64 });
     try {
       const targetMember = interaction.guild.members.cache.get(target.id);
       if (targetMember && targetMember.voice.channelId === currentVC.id) {
@@ -458,67 +463,67 @@ client.on('interactionCreate', async interaction => {
       session.rejectedUsers = session.rejectedUsers || [];
       if (!session.rejectedUsers.includes(target.id)) session.rejectedUsers.push(target.id);
       onetapSessions.set(currentVC.id, session);
-      return interaction.reply({ content: `User ${target.username} rejected.`, ephemeral: true });
+      return interaction.reply({ content: `User ${target.username} rejected.`, flags: 64 });
     } catch (e) {
       console.error(e);
-      return interaction.reply({ content: "Failed to reject user.", ephemeral: true });
+      return interaction.reply({ content: "Failed to reject user.", flags: 64 });
     }
   }
   else if (commandName === "perm") {
     const target = interaction.options.getUser('target');
-    if (!target) return interaction.reply({ content: "Please mention a user.", ephemeral: true });
+    if (!target) return interaction.reply({ content: "Please mention a user.", flags: 64 });
     session.rejectedUsers = session.rejectedUsers || [];
     const idx = session.rejectedUsers.indexOf(target.id);
-    if (idx === -1) return interaction.reply({ content: "User is not rejected.", ephemeral: true });
+    if (idx === -1) return interaction.reply({ content: "User is not rejected.", flags: 64 });
     session.rejectedUsers.splice(idx, 1);
     onetapSessions.set(currentVC.id, session);
-    return interaction.reply({ content: `User ${target.username} is now permitted.`, ephemeral: true });
+    return interaction.reply({ content: `User ${target.username} is now permitted.`, flags: 64 });
   }
   else if (commandName === "hide") {
     try {
       await currentVC.permissionOverwrites.edit(interaction.guild.id, { ViewChannel: false });
-      return interaction.reply({ content: "Session hidden.", ephemeral: true });
+      return interaction.reply({ content: "Session hidden.", flags: 64 });
     } catch (e) {
       console.error(e);
-      return interaction.reply({ content: "Failed to hide session.", ephemeral: true });
+      return interaction.reply({ content: "Failed to hide session.", flags: 64 });
     }
   }
   else if (commandName === "unhide") {
     try {
       await currentVC.permissionOverwrites.edit(interaction.guild.id, { ViewChannel: true });
-      return interaction.reply({ content: "Session visible.", ephemeral: true });
+      return interaction.reply({ content: "Session visible.", flags: 64 });
     } catch (e) {
       console.error(e);
-      return interaction.reply({ content: "Failed to unhide session.", ephemeral: true });
+      return interaction.reply({ content: "Failed to unhide session.", flags: 64 });
     }
   }
   else if (commandName === "transfer") {
     const target = interaction.options.getUser('target');
-    if (!target) return interaction.reply({ content: "Please mention a user.", ephemeral: true });
+    if (!target) return interaction.reply({ content: "Please mention a user.", flags: 64 });
     try {
       session.owner = target.id;
       onetapSessions.set(currentVC.id, session);
-      return interaction.reply({ content: `Ownership transferred to ${target.username}.`, ephemeral: true });
+      return interaction.reply({ content: `Ownership transferred to ${target.username}.`, flags: 64 });
     } catch (e) {
       console.error(e);
-      return interaction.reply({ content: "Failed to transfer ownership.", ephemeral: true });
+      return interaction.reply({ content: "Failed to transfer ownership.", flags: 64 });
     }
   }
   else if (commandName === "name") {
     const newName = interaction.options.getString('text');
     try {
       await currentVC.setName(newName);
-      return interaction.reply({ content: `Session renamed to ${newName}.`, ephemeral: true });
+      return interaction.reply({ content: `Session renamed to ${newName}.`, flags: 64 });
     } catch (e) {
       console.error(e);
-      return interaction.reply({ content: "Failed to rename session.", ephemeral: true });
+      return interaction.reply({ content: "Failed to rename session.", flags: 64 });
     }
   }
   else if (commandName === "status") {
     const statusText = interaction.options.getString('text');
     session.status = statusText;
     onetapSessions.set(currentVC.id, session);
-    return interaction.reply({ content: `Session status set to: ${statusText}`, ephemeral: true });
+    return interaction.reply({ content: `Session status set to: ${statusText}`, flags: 64 });
   }
   else if (commandName === "help") {
     const helpEmbed = new EmbedBuilder()
@@ -529,7 +534,7 @@ client.on('interactionCreate', async interaction => {
         { name: "Global", value: "`/setprefix`, `/setwelcome`, `/showwelcome`, `/jail`, `/jinfo`, `/unban`, `/binfo`, `/topvrf`, `/toponline`" },
         { name: "Session", value: "`/claim`, `/mute`, `/unmute`, `/lock`, `/unlock`, `/limit`, `/reject`, `/perm`, `/hide`, `/unhide`, `/transfer`, `/name`, `/status`" }
       );
-    return interaction.reply({ embeds: [helpEmbed], ephemeral: true });
+    return interaction.reply({ embeds: [helpEmbed], flags: 64 });
   }
 });
 
@@ -542,9 +547,9 @@ client.on('interactionCreate', async interaction => {
   
   const vcId = interaction.customId.split("_").pop();
   const tempVC = interaction.guild.channels.cache.get(vcId);
-  if (!tempVC) return interaction.reply({ content: "Verification session expired.", ephemeral: true });
+  if (!tempVC) return interaction.reply({ content: "Verification session expired.", flags: 64 });
   if (tempVC.members.size >= 2) {
-    return interaction.reply({ content: "Verification session is full.", ephemeral: true });
+    return interaction.reply({ content: "Verification session is full.", flags: 64 });
   }
   const member = interaction.member;
   if (member.voice.channel) {
@@ -552,24 +557,24 @@ client.on('interactionCreate', async interaction => {
       await member.voice.setChannel(tempVC);
       let session = verificationSessions.get(tempVC.id);
       if (session && session.assignedVerificator) {
-        return interaction.reply({ content: "Another verificator is already in session.", ephemeral: true });
+        return interaction.reply({ content: "Another verificator is already in session.", flags: 64 });
       }
       if (session && !session.assignedVerificator) {
         session.assignedVerificator = member.id;
         verificationSessions.set(tempVC.id, session);
       }
-      return interaction.reply({ content: "You have joined the verification VC.", ephemeral: true });
+      return interaction.reply({ content: "You have joined the verification session.", flags: 64 });
     } catch (e) {
       console.error(e);
-      return interaction.reply({ content: "Failed to move you.", ephemeral: true });
+      return interaction.reply({ content: "Failed to move you.", flags: 64 });
     }
   } else {
     try {
       const invite = await tempVC.createInvite({ maxAge: 300, maxUses: 1 });
-      return interaction.reply({ content: `Join via link: ${invite.url}`, ephemeral: true });
+      return interaction.reply({ content: `Join using this link: ${invite.url}`, flags: 64 });
     } catch (e) {
       console.error(e);
-      return interaction.reply({ content: "Failed to create an invite.", ephemeral: true });
+      return interaction.reply({ content: "Failed to create invite.", flags: 64 });
     }
   }
 });
@@ -583,18 +588,18 @@ client.on('interactionCreate', async interaction => {
   
   const vcId = interaction.customId.split("_").pop();
   const helpVC = interaction.guild.channels.cache.get(vcId);
-  if (!helpVC) return interaction.reply({ content: "Help session expired.", ephemeral: true });
+  if (!helpVC) return interaction.reply({ content: "Help session expired.", flags: 64 });
   try {
     if (interaction.member.voice.channel) {
       await interaction.member.voice.setChannel(helpVC);
-      return interaction.reply({ content: "You have joined the help VC.", ephemeral: true });
+      return interaction.reply({ content: "You have joined the help session.", flags: 64 });
     } else {
       const invite = await helpVC.createInvite({ maxAge: 300, maxUses: 1 });
-      return interaction.reply({ content: `Join help via link: ${invite.url}`, ephemeral: true });
+      return interaction.reply({ content: `Join via this link: ${invite.url}`, flags: 64 });
     }
   } catch (e) {
     console.error(e);
-    return interaction.reply({ content: "Failed to move you to help.", ephemeral: true });
+    return interaction.reply({ content: "Failed to move you to help.", flags: 64 });
   }
 });
 
@@ -627,14 +632,14 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
       const alertChannel = guild.channels.cache.get(config.verificationAlertChannelId);
       if (alertChannel) {
         const notifMsg = await alertChannel.send("(# Member Jdid Ajew)");
-        setTimeout(() => notifMsg.delete().catch(()=>{}), 10000);
+        setTimeout(() => notifMsg.delete().catch(() => {}), 10000);
         const joinButton = new ButtonBuilder()
           .setCustomId(`join_verification_${tempVC.id}`)
           .setLabel("Join Verification")
           .setStyle(ButtonStyle.Primary);
         const row = new ActionRowBuilder().addComponents(joinButton);
         const btnMsg = await alertChannel.send({ components: [row] });
-        setTimeout(() => btnMsg.delete().catch(()=>{}), 10000);
+        setTimeout(() => btnMsg.delete().catch(() => {}), 10000);
       }
     } catch (e) {
       console.error("Error in verification creation:", e);
@@ -647,12 +652,12 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
       const member = newState.member;
       const isVerified = member.roles.cache.has(config.verifiedRoleId) || member.roles.cache.has(config.verifiedGirlRoleId);
       if (!isVerified) return;
-      // Remove any previous session owned by this user.
+      // Delete any previous session for this user.
       const existingEntry = Array.from(onetapSessions.entries()).find(([chId, s]) => s.owner === member.id);
       if (existingEntry) {
-        const [oldChId, session] = existingEntry;
+        const [oldChId, sess] = existingEntry;
         const oldCh = guild.channels.cache.get(oldChId);
-        if (oldCh) await oldCh.delete().catch(()=>{});
+        if (oldCh) await oldCh.delete().catch(() => {});
         onetapSessions.delete(oldChId);
       }
       const displayName = member.displayName;
@@ -703,7 +708,7 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
             .setStyle(ButtonStyle.Primary);
           const row = new ActionRowBuilder().addComponents(joinHelpButton);
           const notifMsg = await helpLogChannel.send(`Hey ${helperRole.toString()}, ${member.displayName} needs help!`, { components: [row] });
-          setTimeout(() => notifMsg.delete().catch(()=>{}), 10000);
+          setTimeout(() => notifMsg.delete().catch(() => {}), 10000);
         }
       }
     } catch (e) {
@@ -711,12 +716,12 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
     }
   }
   
-  // AUTO-DELETION FOR EPHEMERAL CHANNELS (One-Tap / Need Help)
+  // AUTO-DELETION FOR EPHEMERAL CHANNELS
   if (oldState.channel && onetapSessions.has(oldState.channel.id)) {
     const session = onetapSessions.get(oldState.channel.id);
     // For need help sessions: if owner leaves, delete immediately.
     if (session.status === "need help" && oldState.member.id === session.owner) {
-      oldState.channel.delete().catch(()=>{});
+      oldState.channel.delete().catch(() => {});
       onetapSessions.delete(oldState.channel.id);
       return;
     }
@@ -730,7 +735,7 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
       }
     }
     if (oldState.channel.members.size === 0) {
-      oldState.channel.delete().catch(()=>{});
+      oldState.channel.delete().catch(() => {});
       onetapSessions.delete(oldState.channel.id);
     }
   }
@@ -749,7 +754,7 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
       }
     }
     if (oldState.channel.members.size === 0) {
-      oldState.channel.delete().catch(()=>{});
+      oldState.channel.delete().catch(() => {});
       verificationSessions.delete(oldState.channel.id);
     }
   }
@@ -764,9 +769,9 @@ client.on('interactionCreate', async interaction => {
   
   const vcId = interaction.customId.split("_").pop();
   const tempVC = interaction.guild.channels.cache.get(vcId);
-  if (!tempVC) return interaction.reply({ content: "Verification session expired.", ephemeral: true });
+  if (!tempVC) return interaction.reply({ content: "Verification session expired.", flags: 64 });
   if (tempVC.members.size >= 2) {
-    return interaction.reply({ content: "Verification session is full.", ephemeral: true });
+    return interaction.reply({ content: "Verification session is full.", flags: 64 });
   }
   const member = interaction.member;
   if (member.voice.channel) {
@@ -774,25 +779,49 @@ client.on('interactionCreate', async interaction => {
       await member.voice.setChannel(tempVC);
       let session = verificationSessions.get(tempVC.id);
       if (session && session.assignedVerificator) {
-        return interaction.reply({ content: "Another verificator is already in session.", ephemeral: true });
+        return interaction.reply({ content: "Another verificator is already in session.", flags: 64 });
       }
       if (session && !session.assignedVerificator) {
         session.assignedVerificator = member.id;
         verificationSessions.set(tempVC.id, session);
       }
-      return interaction.reply({ content: "You have joined the verification session.", ephemeral: true });
+      return interaction.reply({ content: "You have joined the verification session.", flags: 64 });
     } catch (e) {
       console.error(e);
-      return interaction.reply({ content: "Failed to move you.", ephemeral: true });
+      return interaction.reply({ content: "Failed to move you.", flags: 64 });
     }
   } else {
     try {
       const invite = await tempVC.createInvite({ maxAge: 300, maxUses: 1 });
-      return interaction.reply({ content: `Join using this link: ${invite.url}`, ephemeral: true });
+      return interaction.reply({ content: `Join via link: ${invite.url}`, flags: 64 });
     } catch (e) {
       console.error(e);
-      return interaction.reply({ content: "Failed to create an invite.", ephemeral: true });
+      return interaction.reply({ content: "Failed to create invite.", flags: 64 });
     }
+  }
+});
+
+// ------------------------------
+// "Join Help" Button Handler
+// ------------------------------
+client.on('interactionCreate', async interaction => {
+  if (!interaction.isButton()) return;
+  if (!interaction.customId.startsWith("join_help_")) return;
+  
+  const vcId = interaction.customId.split("_").pop();
+  const helpVC = interaction.guild.channels.cache.get(vcId);
+  if (!helpVC) return interaction.reply({ content: "Help session expired.", flags: 64 });
+  try {
+    if (interaction.member.voice.channel) {
+      await interaction.member.voice.setChannel(helpVC);
+      return interaction.reply({ content: "You have joined the help session.", flags: 64 });
+    } else {
+      const invite = await helpVC.createInvite({ maxAge: 300, maxUses: 1 });
+      return interaction.reply({ content: `Join using this link: ${invite.url}`, flags: 64 });
+    }
+  } catch (e) {
+    console.error(e);
+    return interaction.reply({ content: "Failed to move you to help.", flags: 64 });
   }
 });
 
@@ -874,7 +903,7 @@ client.on('messageCreate', async message => {
 // ------------------------------
 client.on('interactionCreate', async interaction => {
   if (!interaction.isButton()) return;
-  if (interaction.customId.startsWith("lang_") || 
+  if (interaction.customId.startsWith("lang_") ||
       interaction.customId.startsWith("join_verification_") ||
       interaction.customId.startsWith("join_help_"))
     return;
@@ -891,7 +920,7 @@ client.on('interactionCreate', async interaction => {
       return interaction.update({ embeds: [embed], components: [] });
     } else if (action === 'banner') {
       const bannerURL = targetUser.bannerURL({ dynamic: true, size: 1024 });
-      if (!bannerURL) return interaction.reply({ content: "No banner set.", ephemeral: true });
+      if (!bannerURL) return interaction.reply({ content: "No banner set.", flags: 64 });
       const embed = new EmbedBuilder()
         .setColor(0x00AE86)
         .setTitle(`${targetUser.username}'s Banner`)
@@ -900,12 +929,12 @@ client.on('interactionCreate', async interaction => {
     }
   } catch (e) {
     console.error(e);
-    return interaction.reply({ content: "Error fetching user data.", ephemeral: true });
+    return interaction.reply({ content: "Error fetching user data.", flags: 64 });
   }
 });
 
 // ------------------------------
-// "Ready" Handler for Interactive Setup in "bot-setup" Channel
+// "Ready" Handler for Setup in "bot-setup" Channel
 // ------------------------------
 client.on('messageCreate', async message => {
   if (message.author.bot) return;

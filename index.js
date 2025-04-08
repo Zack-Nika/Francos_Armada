@@ -1,14 +1,14 @@
 // index.js
 // Franco's Armada Bot – Final Complete Code (with Global & One-Tap Commands, Jail System, Verification Logging, Need Help One-Tap)
 // FEATURES:
-// • Connects to MongoDB for per‑server settings (language, prefix, role/channel IDs, custom welcome message, and new keys for need help).
+// • Connects to MongoDB for per‑server settings (language, prefix, role/channel IDs, custom welcome message, and keys for need help).
 // • On guild join, creates "bot‑setup" and "bot‑config" channels visible only to the owner.
 // • New members receive the unverified role and a welcome DM tagging them.
 // • Interactive multi‑language setup (English, Darija, Spanish, Russian, French) is triggered by the owner typing "ready" in "bot‑setup".
 // • Verification Process:
 //     – When an unverified user joins the permanent verification channel, an ephemeral VC named "Verify – [displayName]" (userLimit: 2) is created and the user is moved there.
 //     – A plain‑text notification ("(# Member Jdid 🙋‍♂️)") plus a "Join Verification" button is sent to the alert channel (both auto-deleted after 10 seconds).
-//     – When a verificator clicks the button (if the VC isn’t full), they’re moved in and their ID is stored.
+//     – When a verificator clicks the button (if the VC isn’t full and no verificator is assigned), they’re moved in and their ID is stored.
 //     – In that VC, the verificator types "+boy" or "+girl" (no mention required) to verify the user (removing the unverified role and adding the corresponding verified role).
 //     – When the verificator leaves, the bot moves the verified user to the nearest open VC (or falls back to the verification channel).
 //     – Additionally, if a verification log channel is configured, a log message is sent there.
@@ -17,8 +17,8 @@
 //     – The room is open by default and auto‑deletes when empty.
 // • New "Need Help" One‑Tap Process:
 //     – When a member joins the designated need-help channel, the bot creates a temporary VC named "[displayName] needs help".
-//     – It then pings all users with the helper role in a designated help log channel (if configured).
-// • Global slash commands (e.g. /setprefix, /setwelcome, /showwelcome, /jail, /jinfo, /unban, /binfo, /topvrf, /toponline) work globally (admins/owners only).
+//     – It then pings all users with the helper role in a designated need-help log channel if configured.
+// • Global slash commands (e.g. /setprefix, /setwelcome, /showwelcome, /jail, /jinfo, /unban, /binfo, /topvrf, /toponline) are for admins/owners only.
 // • One‑Tap management slash commands (e.g. /claim, /mute, /unmute, /lock, /unlock, /limit, /reject, /perm, /hide, /unhide, /transfer, /name, /status, /help) require that the user is in a one‑tap room and respond with blue embed messages.
 // • The "R" command shows a user’s profile picture with Avatar/Banner buttons.
 
@@ -103,17 +103,17 @@ const languagePrompts = {
   darija: {
     verifiedRoleId: "🔹 **# 3afak 3tini l'ID dyal Verified Boy Role**",
     unverifiedRoleId: "🔹 **# 3afak 3tini l'ID dyal Unverified Role**",
-    verifiedGirlRoleId: "🔹 **# Daba 3tini l'ID dyal Verified Girl Role**",
+    verifiedGirlRoleId: "🔹 **# 3afak 3tini l'ID dyal Verified Girl Role**",
     verificatorRoleId: "🔹 **# 3tini l'ID dyal Verificator Role**",
-    voiceVerificationChannelId: "🔹 **# 3afak 3tini l'ID dyal Voice Verification Channel (fin kytverifa bnadem jdid)**",
-    oneTapChannelId: "🔹 **# 3tini l'ID dyal One-Tap Channel**",
+    voiceVerificationChannelId: "🔹 **# 3afak 3tini l'ID dyal Voice Verification Channel (permanent)**",
+    oneTapChannelId: "🔹 **# 3afak 3tini l'ID dyal One-Tap Channel**",
     verificationAlertChannelId: "🔹 **# 3afak 3tini l'ID dyal Verification Alert Channel**",
-    jailRoleId: "🔹 **# 3tini l'ID dyal Jailed Role** (awla la m3ndksh ktb `none`)",
-    voiceJailChannelId: "🔹 **# 3afak 3tini l'ID dyal Voice Jail Channel** (awla la m3ndksh ktb `none`)",
-    verificationLogChannelId: "🔹 **# 3tini l'ID dyal Verification Log Channel** (awla la m3ndksh ktb`none`)",
-    needHelpChannelId: "🔹 **# 3afak l'ID dyal Need Help Channel**",
+    jailRoleId: "🔹 **# 3afak 3tini l'ID dyal Jail Role** (aw `none`)",
+    voiceJailChannelId: "🔹 **# 3afak 3tini l'ID dyal Voice Jail Channel** (aw `none`)",
+    verificationLogChannelId: "🔹 **# 3afak 3tini l'ID dyal Verification Log Channel** (aw `none`)",
+    needHelpChannelId: "🔹 **# 3afak 3tini l'ID dyal Need Help Channel**",
     helperRoleId: "🔹 **# 3afak 3tini l'ID dyal Helper Role**",
-    needHelpLogChannelId: "🔹 **# 3afak 3tini l'ID dyal Need Help Log Channel** (awla la m3ndksh ktb `none`)"
+    needHelpLogChannelId: "🔹 **# 3afak 3tini l'ID dyal Need Help Log Channel** (aw `none`)"
   },
   spanish: {
     verifiedRoleId: "🔹 **# Proporciona el ID del Rol de Chico Verificado**",
@@ -167,8 +167,8 @@ const languageExtras = {
     setupComplete: "Setup complete! 🎉"
   },
   darija: {
-    setupStart: "Nbdaw setup dialna. Copier-coller kol ID ghnsowlek 3lih.",
-    setupComplete: "Sf Bot db 100% Wajed! 🎉"
+    setupStart: "Nbda setup. Copier-coller chaque ID quand demandé.",
+    setupComplete: "Setup sali! 🎉"
   },
   spanish: {
     setupStart: "Empecemos la configuración. Copia/pega cada ID cuando se te pida.",
@@ -329,7 +329,7 @@ const { Routes: Routes2 } = require('discord-api-types/v10');
 })();
 
 // ------------------------------
-// Slash Command Interaction Handler – Separate Global and One-Tap Commands
+// Interaction Handler for Slash Commands – Separate Global and One-Tap Commands
 // ------------------------------
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
@@ -341,7 +341,7 @@ client.on('interactionCreate', async interaction => {
   // Global commands (do not require a voice channel)
   const globalCommands = ["setprefix", "setwelcome", "showwelcome", "jail", "jinfo", "unban", "binfo", "topvrf", "toponline"];
   if (globalCommands.includes(commandName)) {
-    // Only guild owner or users with Administrator permissions can use these.
+    // Only guild owner or users with Administrator permission can use these.
     if (!interaction.memberPermissions.has(PermissionsBitField.Flags.Administrator) &&
         interaction.member.id !== interaction.guild.ownerId) {
       return interaction.reply({ content: "You are not allowed to use this command.", ephemeral: true });
@@ -431,9 +431,9 @@ client.on('interactionCreate', async interaction => {
     } else if (commandName === "toponline") {
       return interaction.reply({ content: "Top online users: [Feature coming soon...]", ephemeral: true });
     }
-    return; // End global command handling
+    return;
   }
-  // One-Tap Management commands (require user to be in a one-tap VC)
+  // One-Tap Management commands (require the user to be in a one-tap VC)
   const member = interaction.member;
   const currentVC = member.voice.channel;
   if (!currentVC || !onetapSessions.has(currentVC.id)) {
@@ -719,7 +719,11 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
     try {
       const member = newState.member;
       const unverifiedRole = guild.roles.cache.get(config.unverifiedRoleId);
-      if (!unverifiedRole || !member.roles.cache.has(unverifiedRole.id)) {
+      if (!unverifiedRole) {
+        console.error("Unverified role not found in guild:", guild.id);
+        return;
+      }
+      if (!member.roles.cache.has(unverifiedRole.id)) {
         console.log(`${member.displayName} is not unverified; skipping ephemeral VC creation.`);
         return;
       }
@@ -848,6 +852,47 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
 });
 
 // ------------------------------
+// "Join Verification" Button Handler
+// ------------------------------
+client.on('interactionCreate', async interaction => {
+  if (interaction.isButton() && interaction.customId.startsWith("join_verification_")) {
+    const vcId = interaction.customId.split("_").pop();
+    const tempVC = interaction.guild.channels.cache.get(vcId);
+    if (!tempVC) return interaction.reply({ content: "Verification session expired.", ephemeral: true });
+    // Ensure only 2 members (1 unverified and 1 verificator) can be in the session.
+    if (tempVC.members.size >= 2) {
+      return interaction.reply({ content: "Verification session is full. Only 1 unverified and 1 verificator allowed.", ephemeral: true });
+    }
+    const member = interaction.member;
+    if (member.voice.channel) {
+      try {
+        await member.voice.setChannel(tempVC);
+        let session = verificationSessions.get(tempVC.id);
+        if (session && session.assignedVerificator) {
+          return interaction.reply({ content: "Another verificator has already joined this session.", ephemeral: true });
+        }
+        if (session && !session.assignedVerificator) {
+          session.assignedVerificator = member.id;
+          verificationSessions.set(tempVC.id, session);
+        }
+        return interaction.reply({ content: "You have joined the verification VC.", ephemeral: true });
+      } catch (err) {
+        console.error(err);
+        return interaction.reply({ content: "Failed to move you.", ephemeral: true });
+      }
+    } else {
+      try {
+        const invite = await tempVC.createInvite({ maxAge: 300, maxUses: 1 });
+        return interaction.reply({ content: `Join via this link: ${invite.url}`, ephemeral: true });
+      } catch (err) {
+        console.error(err);
+        return interaction.reply({ content: "Failed to create an invite.", ephemeral: true });
+      }
+    }
+  }
+});
+
+// ------------------------------
 // +boy / +girl Verification Command Handler (No mention required)
 // ------------------------------
 client.on('messageCreate', async message => {
@@ -940,6 +985,83 @@ client.on('interactionCreate', async interaction => {
   } catch (err) {
     console.error("Error fetching user for profile:", err);
     return interaction.reply({ content: "Error fetching user data.", ephemeral: true });
+  }
+});
+
+// ------------------------------
+// "Ready" Handler for Interactive Setup in "bot-setup" Channel
+// ------------------------------
+client.on('messageCreate', async message => {
+  if (message.author.bot) return;
+  if (message.channel.name !== 'bot-setup') return;
+  let owner;
+  try {
+    owner = await message.guild.fetchOwner();
+  } catch (err) {
+    console.error("Failed to fetch guild owner:", err);
+    return;
+  }
+  if (message.author.id !== owner.id) {
+    console.log(`Ignoring "ready" from ${message.author.tag} because owner is ${owner.user.tag}`);
+    return;
+  }
+  if (message.content.trim().toLowerCase() === 'ready') {
+    console.log(`"ready" triggered by ${message.author.tag} in ${message.guild.name}`);
+    if (setupStarted.get(message.guild.id)) return;
+    setupStarted.set(message.guild.id, true);
+    try {
+      const config = await settingsCollection.findOne({ serverId: message.guild.id });
+      const lang = (config && config.language) || "english";
+      await runSetup(message.author.id, message.channel, message.guild.id, lang);
+      setTimeout(() => { message.channel.delete().catch(() => {}); }, 5000);
+    } catch (err) {
+      console.error("Setup error:", err);
+    }
+  }
+});
+
+// ------------------------------
+// On Guild Join: Create "bot-setup" and "bot-config" Channels (Owner-only)
+// ------------------------------
+client.on(Events.GuildCreate, async guild => {
+  try {
+    const owner = await guild.fetchOwner();
+    // Create "bot-setup" channel visible only to the owner.
+    const setupChannel = await guild.channels.create({
+      name: 'bot-setup',
+      type: 0,
+      topic: 'Configure the bot here. This channel will be deleted after setup.',
+      permissionOverwrites: [
+        { id: guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
+        { id: owner.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] }
+      ]
+    });
+    setupChannel.send(`<@${owner.id}>, welcome to Franco's Armada! Let's set up your bot configuration.`);
+    // Create "bot-config" channel visible only to the owner.
+    await guild.channels.create({
+      name: 'bot-config',
+      type: 0,
+      topic: 'Bot configuration channel. Use slash commands like /setprefix, /setwelcome, etc.',
+      permissionOverwrites: [
+        { id: guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
+        { id: owner.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] }
+      ]
+    });
+    console.log("Created setup and config channels for", guild.name);
+    // Language selection buttons
+    const englishButton = new ButtonBuilder().setCustomId('lang_english').setLabel('English').setStyle(ButtonStyle.Primary);
+    const darijaButton = new ButtonBuilder().setCustomId('lang_darija').setLabel('Darija').setStyle(ButtonStyle.Primary);
+    const spanishButton = new ButtonBuilder().setCustomId('lang_spanish').setLabel('Spanish').setStyle(ButtonStyle.Primary);
+    const russianButton = new ButtonBuilder().setCustomId('lang_russian').setLabel('Russian').setStyle(ButtonStyle.Primary);
+    const frenchButton = new ButtonBuilder().setCustomId('lang_french').setLabel('French').setStyle(ButtonStyle.Primary);
+    const row = new ActionRowBuilder().addComponents(englishButton, darijaButton, spanishButton, russianButton, frenchButton);
+    const embed = new EmbedBuilder()
+      .setColor(0x00AE86)
+      .setTitle("Welcome to Franco's Armada!")
+      .setDescription("Select your language by clicking a button, then type `ready` to begin setup.\nOnce setup is complete, this channel will be deleted automatically.");
+    setupChannel.send({ embeds: [embed], components: [row] });
+  } catch (err) {
+    console.error("Setup channel error:", err);
   }
 });
 

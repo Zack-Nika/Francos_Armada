@@ -40,7 +40,6 @@ const {
   EmbedBuilder,
   Events,
   REST,
-  Routes,
   SlashCommandBuilder,
   PermissionsBitField
 } = require('discord.js');
@@ -601,20 +600,24 @@ client.on('messageCreate', async message => {
       }
       if (message.content.startsWith('+boy')) {
         if (config.verifiedRoleId) await memberToVerify.roles.add(config.verifiedRoleId);
-        return message.channel.send({ embeds: [
-          new EmbedBuilder()
-            .setColor(0x00FF00)
-            .setTitle("Verification Successful!")
-            .setDescription(`${memberToVerify} has been verified as Boy!`)
-        ]});
+        return message.channel.send({
+          embeds: [
+            new EmbedBuilder()
+              .setColor(0x00FF00)
+              .setTitle("Verification Successful!")
+              .setDescription(`${memberToVerify} has been verified as Boy!`)
+          ]
+        });
       } else {
         if (config.verifiedGirlRoleId) await memberToVerify.roles.add(config.verifiedGirlRoleId);
-        return message.channel.send({ embeds: [
-          new EmbedBuilder()
-            .setColor(0xFF69B4)
-            .setTitle("Verification Successful!")
-            .setDescription(`${memberToVerify} has been verified as Girl!`)
-        ]});
+        return message.channel.send({
+          embeds: [
+            new EmbedBuilder()
+              .setColor(0xFF69B4)
+              .setTitle("Verification Successful!")
+              .setDescription(`${memberToVerify} has been verified as Girl!`)
+          ]
+        });
       }
     } catch (e) {
       console.error(e);
@@ -773,6 +776,83 @@ client.on(Events.GuildMemberAdd, async member => {
     }
   } catch (e) {
     console.error(e);
+  }
+});
+
+// ------------------------------
+// ADDED FOR ONE-TAP: Voice State Handler
+// Automatically create ephemeral channels for one-tap
+// ------------------------------
+client.on('voiceStateUpdate', async (oldState, newState) => {
+  try {
+    // If user connected to a voice channel (newState.channelId exists)
+    if (!oldState.channelId && newState.channelId) {
+      const member = newState.member;
+      const guild = newState.guild;
+      const config = await settingsCollection.findOne({ serverId: guild.id });
+      if (!config) return; // bot not configured
+
+      // Is this the one-tap channel?
+      if (config.oneTapChannelId && newState.channelId === config.oneTapChannelId) {
+        // OPTIONAL: Check if user is actually verified
+        // by verifying if they do NOT have unverifiedRoleId
+        if (config.unverifiedRoleId && member.roles.cache.has(config.unverifiedRoleId)) {
+          // They still have unverified role, so skip
+          return;
+        }
+
+        // If there's an old ephemeral channel for this user, delete it first
+        for (const [channelId, session] of onetapSessions.entries()) {
+          if (session.owner === member.id) {
+            const oldChan = guild.channels.cache.get(channelId);
+            if (oldChan) {
+              await oldChan.delete().catch(() => {});
+            }
+            onetapSessions.delete(channelId);
+          }
+        }
+
+        // Create the ephemeral channel
+        const ephemeralChannel = await guild.channels.create({
+          name: `${member.displayName}'s Room`,
+          type: 2, // 2 = voice
+          permissionOverwrites: [
+            {
+              // Everyone can see this channel unless we hide it,
+              // but we can let them connect too if you want
+              id: guild.id,
+              allow: [PermissionsBitField.Flags.Connect, PermissionsBitField.Flags.ViewChannel]
+            },
+            {
+              // Deny unverified from connecting
+              id: config.unverifiedRoleId || '0', // fallback to bogus ID if not set
+              deny: [PermissionsBitField.Flags.Connect]
+            },
+            {
+              // Owner can connect, speak, stream, attach files, etc.
+              id: member.id,
+              allow: [
+                PermissionsBitField.Flags.Connect,
+                PermissionsBitField.Flags.Speak,
+                PermissionsBitField.Flags.Stream,
+                PermissionsBitField.Flags.AttachFiles
+              ]
+            }
+          ]
+        });
+
+        // Store session info
+        onetapSessions.set(ephemeralChannel.id, {
+          owner: member.id,
+          rejectedUsers: []
+        });
+
+        // Move user into the ephemeral channel
+        await member.voice.setChannel(ephemeralChannel);
+      }
+    }
+  } catch (err) {
+    console.error("voiceStateUpdate error:", err);
   }
 });
 

@@ -1,26 +1,26 @@
 // index.js
-// Franco's Armada Bot – Final Complete Code (with Global & One-Tap Commands, Jail System, Verification Logging, Need Help One-Tap)
+// Franco's Armada Bot – Final Complete Code
 // FEATURES:
 // • Connects to MongoDB for per‑server settings (language, prefix, role/channel IDs, custom welcome message, and keys for need help).
 // • On guild join, creates "bot‑setup" and "bot‑config" channels visible only to the owner.
-// • New members receive the unverified role and a welcome DM tagging them.
+// • New members automatically receive the unverified role and (optionally) a DM welcome message.
 // • Interactive multi‑language setup (English, Darija, Spanish, Russian, French) is triggered by the owner typing "ready" in "bot‑setup".
 // • Verification Process:
-//     – When an unverified user joins the permanent verification channel, an ephemeral VC named "Verify – [displayName]" (userLimit: 2) is created and the user is moved there.
-//     – A plain‑text notification ("(# Member Jdid 🙋‍♂️)") plus a "Join Verification" button is sent to the alert channel (both auto-deleted after 10 seconds).
-//     – When a verificator clicks the button (if the VC isn’t full and if no verificator is already assigned), they’re moved in and their ID is stored.
-//     – In that VC, the verificator types "+boy" or "+girl" (no mention required) to verify the user (removing the unverified role and adding the corresponding verified role).
-//     – When the verificator leaves, the bot moves the verified user to the nearest open VC (or falls back to the verification channel).
-//     – Additionally, if a verification log channel is configured, a log message is sent there.
+//     – When an unverified user joins the designated verification channel, an ephemeral VC named "Verify – [displayName]" (userLimit: 2) is created and the user is moved there.
+//     – A plain‑text notification ("(# Member Jdid 🙋‍♂️)") and a "Join Verification" button are sent to the alert channel (both auto‑deleted after 10 seconds).
+//     – When a verificator clicks the button (with an extra check to ensure only one verificator joins), they are moved into the VC and recorded.
+//     – In that VC, the verificator types "+boy" or "+girl" (without needing to mention the user) to verify the member – which removes the unverified role and adds the respective verified role.
+//     – When the verificator leaves, the bot moves the verified user to the nearest open VC (or to the verification channel if none found).
+//     – If a verification log channel is configured, a log message is sent there.
 // • One‑Tap Process:
-//     – When a verified user joins the designated one‑tap channel, an ephemeral VC named "[displayName]'s Room" is created with permission overwrites denying VIEW_CHANNEL and CONNECT for the unverified role.
+//     – When a verified user joins the designated one‑tap channel, an ephemeral VC named "[displayName]'s Room" is created with overwrites that deny VIEW_CHANNEL and CONNECT for the unverified role.
 //     – The room is open by default and auto‑deletes when empty.
-// • New "Need Help" One‑Tap Process:
-//     – When a member joins the designated need-help channel, the bot creates a temporary VC named "[displayName] needs help".
-//     – It then pings all users with the helper role in a designated need-help log channel (if configured).
-// • Global slash commands (e.g. /setprefix, /setwelcome, /showwelcome, /jail, /jinfo, /unban, /binfo, /topvrf, /toponline) work globally (admins/owners only).
-// • One‑Tap management slash commands (e.g. /claim, /mute, /unmute, /lock, /unlock, /limit, /reject, /perm, /hide, /unhide, /transfer, /name, /status, /help) require that the user is in a one‑tap room and respond with blue embed messages.
-// • The "R" command shows a user’s profile picture with Avatar/Banner buttons.
+// • Need Help One‑Tap Process:
+//     – When a member joins the designated need-help channel, a temporary VC named "[displayName] needs help" is created.
+//     – If configured, the bot pings the helper role in a need-help log channel.
+// • Global slash commands (e.g. /setprefix, /setwelcome, /showwelcome, /jail, /jinfo, /unban, /binfo, /topvrf, /toponline) are available only to administrators/owners.
+// • One‑Tap management slash commands (e.g. /claim, /mute, /unmute, /lock, /unlock, /limit, /reject, /perm, /hide, /unhide, /transfer, /name, /status, /help) respond using blue embed messages (0x3498DB) and require the user to be in a one‑tap VC.
+// • The "R" command shows a user’s profile picture (with Avatar/Banner buttons).
 
 require('dotenv').config();
 const {
@@ -77,12 +77,12 @@ const client = new Client({
 // Global Variables for Setup, Verification, One-Tap, Jail, and Need Help
 // ------------------------------
 const setupStarted = new Map();
-const verificationSessions = new Map(); // For ephemeral verification VCs
-const onetapSessions = new Map();       // For ephemeral one-tap VCs
-const jailData = new Map();             // For storing jail reasons
+const verificationSessions = new Map(); // Ephemeral VCs for verification
+const onetapSessions = new Map();       // Ephemeral VCs for one-tap and need help
+const jailData = new Map();             // Stores jail reasons
 
 // ------------------------------
-// Multi-Language Data (Added keys for need help)
+// Multi-Language Data (including new keys for need help)
 // ------------------------------
 const languagePrompts = {
   english: {
@@ -398,7 +398,6 @@ client.on('interactionCreate', async interaction => {
       let targetMember = await interaction.guild.members.fetch(userid).catch(() => null);
       if (!targetMember) return interaction.reply({ content: "User not found.", ephemeral: true });
       try {
-        // Remove all roles and add the jail role
         await targetMember.roles.set([]);
         if (config.jailRoleId && config.jailRoleId !== "none") {
           const jailRole = targetMember.guild.roles.cache.get(config.jailRoleId);
@@ -452,7 +451,7 @@ client.on('interactionCreate', async interaction => {
     } else if (commandName === "toponline") {
       return interaction.reply({ content: "Top online users: [Feature coming soon...]", ephemeral: true });
     }
-    return;
+    return; // End global command handling
   }
   // One-Tap Management commands (require the user to be in a one-tap VC)
   const member = interaction.member;
@@ -461,7 +460,6 @@ client.on('interactionCreate', async interaction => {
     return interaction.reply({ content: "You are not in a one-tap room.", ephemeral: true });
   }
   let session = onetapSessions.get(currentVC.id);
-  // Blue embed color: 0x3498DB
   if (commandName === "claim") {
     if (session.owner === member.id)
       return interaction.reply({ content: "You already own this tap.", ephemeral: true });
@@ -728,284 +726,25 @@ client.on('messageCreate', async message => {
 });
 
 // ------------------------------
-// Need Help One-Tap Process
+// GuildMemberAdd: Assign Unverified Role & Optional DM
 // ------------------------------
-client.on('voiceStateUpdate', async (oldState, newState) => {
-  const guild = newState.guild || oldState.guild;
-  const config = await settingsCollection.findOne({ serverId: guild.id });
-  if (!config) return;
-  
-  // Existing Verification Process
-  if (newState.channelId === config.voiceVerificationChannelId) {
-    try {
-      const member = newState.member;
-      const unverifiedRole = guild.roles.cache.get(config.unverifiedRoleId);
-      if (!unverifiedRole) {
-        console.error("Unverified role not found in guild:", guild.id);
-        return;
-      }
-      if (!member.roles.cache.has(unverifiedRole.id)) {
-        console.log(`${member.displayName} is not unverified; skipping ephemeral VC creation.`);
-        return;
-      }
-      const tempVC = await guild.channels.create({
-        name: `Verify – ${member.displayName}`,
-        type: 2,
-        parent: newState.channel.parentId,
-        userLimit: 2
-      });
-      await member.voice.setChannel(tempVC);
-      verificationSessions.set(tempVC.id, { userId: member.id, assignedVerificator: null, rejected: false });
-      const alertChannel = guild.channels.cache.get(config.verificationAlertChannelId);
-      if (alertChannel) {
-        const notifMsg = await alertChannel.send("(# Member Jdid 🙋‍♂️)");
-        setTimeout(() => notifMsg.delete().catch(() => {}), 10000);
-        const joinButton = new ButtonBuilder()
-          .setCustomId(`join_verification_${tempVC.id}`)
-          .setLabel("Join Verification")
-          .setStyle(ButtonStyle.Primary);
-        const row = new ActionRowBuilder().addComponents(joinButton);
-        const buttonMsg = await alertChannel.send({ components: [row] });
-        setTimeout(() => buttonMsg.delete().catch(() => {}), 10000);
-      }
-    } catch (err) {
-      console.error("Error in verification VC creation:", err);
-    }
-  }
-  
-  // One-Tap Process: When a verified user joins the designated one-tap channel
-  if (newState.channelId === config.oneTapChannelId) {
-    try {
-      const member = newState.member;
-      const displayName = member.displayName || member.user.username;
-      const permissionOverwrites = [];
-      if (config.unverifiedRoleId) {
-        const unverifiedRole = guild.roles.cache.get(config.unverifiedRoleId);
-        if (unverifiedRole) {
-          permissionOverwrites.push({ id: unverifiedRole.id, deny: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.Connect] });
-        } else {
-          console.error("Unverified role not found in guild", guild.id);
-        }
-      }
-      permissionOverwrites.push({ id: member.id, allow: [PermissionsBitField.Flags.Connect] });
-      const tempVC = await guild.channels.create({
-        name: `${displayName}'s Room`,
-        type: 2,
-        parent: newState.channel.parentId,
-        permissionOverwrites
-      });
-      onetapSessions.set(tempVC.id, { owner: member.id, rejectedUsers: [], status: "" });
-      await member.voice.setChannel(tempVC);
-    } catch (err) {
-      console.error("Error creating one-tap VC:", err);
-    }
-  }
-  
-  // Need Help Process: When a member joins the designated need help channel
-  if (newState.channelId === config.needHelpChannelId) {
-    try {
-      const member = newState.member;
-      const displayName = member.displayName || member.user.username;
-      const permissionOverwrites = [];
-      if (config.unverifiedRoleId) {
-        const unverifiedRole = guild.roles.cache.get(config.unverifiedRoleId);
-        if (unverifiedRole) {
-          permissionOverwrites.push({ id: unverifiedRole.id, deny: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.Connect] });
-        }
-      }
-      const helpVC = await guild.channels.create({
-        name: `${displayName} needs help`,
-        type: 2,
-        parent: newState.channel.parentId,
-        permissionOverwrites
-      });
-      onetapSessions.set(helpVC.id, { owner: member.id, rejectedUsers: [], status: "need help" });
-      await member.voice.setChannel(helpVC);
-      if (config.helperRoleId && config.needHelpLogChannelId && config.needHelpLogChannelId !== "none") {
-        const helperRole = guild.roles.cache.get(config.helperRoleId);
-        const helpLogChannel = guild.channels.cache.get(config.needHelpLogChannelId);
-        if (helperRole && helpLogChannel) {
-          helpLogChannel.send(`Hey ${helperRole.toString()}, ${member.displayName} needs help!`).catch(console.error);
-        }
-      }
-    } catch (err) {
-      console.error("Error creating need help VC:", err);
-    }
-  }
-  
-  // One-Tap: Auto-delete VC if empty and reassign owner if needed
-  if (oldState.channel && onetapSessions.has(oldState.channel.id)) {
-    let session = onetapSessions.get(oldState.channel.id);
-    if (oldState.member.id === session.owner) {
-      const remaining = oldState.channel.members;
-      if (remaining.size > 0) {
-        const newOwner = remaining.first();
-        session.owner = newOwner.id;
-        onetapSessions.set(oldState.channel.id, session);
-      }
-    }
-    if (oldState.channel.members.size === 0) {
-      oldState.channel.delete().catch(() => {});
-      onetapSessions.delete(oldState.channel.id);
-    }
-  }
-  
-  // Verification VC: If verificator leaves, move verified user to nearest open VC
-  if (oldState.channel && verificationSessions.has(oldState.channel.id)) {
-    const session = verificationSessions.get(oldState.channel.id);
-    if (oldState.member.id === session.assignedVerificator) {
-      if (oldState.channel.members.has(session.userId)) {
-        const verifiedMember = oldState.channel.members.get(session.userId);
-        let activeVC = guild.channels.cache
-          .filter(ch => ch.type === 2 && ch.id !== oldState.channel.id && ch.members.size > 0)
-          .first();
-        if (!activeVC) activeVC = guild.channels.cache.get(config.voiceVerificationChannelId);
-        if (activeVC) {
-          await verifiedMember.voice.setChannel(activeVC);
-        }
-      }
-    }
-    if (oldState.channel.members.size === 0) {
-      oldState.channel.delete().catch(() => {});
-      verificationSessions.delete(oldState.channel.id);
-    }
-  }
-});
-
-// ------------------------------
-// "Join Verification" Button Handler
-// ------------------------------
-client.on('interactionCreate', async interaction => {
-  if (interaction.isButton() && interaction.customId.startsWith("join_verification_")) {
-    const vcId = interaction.customId.split("_").pop();
-    const tempVC = interaction.guild.channels.cache.get(vcId);
-    if (!tempVC) return interaction.reply({ content: "Verification session expired.", ephemeral: true });
-    // Ensure only 2 members (1 unverified and 1 verificator) can be in the session.
-    if (tempVC.members.size >= 2) {
-      return interaction.reply({ content: "Verification session is full. Only 1 unverified and 1 verificator allowed.", ephemeral: true });
-    }
-    const member = interaction.member;
-    if (member.voice.channel) {
-      try {
-        await member.voice.setChannel(tempVC);
-        let session = verificationSessions.get(tempVC.id);
-        if (session && session.assignedVerificator) {
-          return interaction.reply({ content: "Another verificator has already joined this session.", ephemeral: true });
-        }
-        if (session && !session.assignedVerificator) {
-          session.assignedVerificator = member.id;
-          verificationSessions.set(tempVC.id, session);
-        }
-        return interaction.reply({ content: "You have joined the verification VC.", ephemeral: true });
-      } catch (err) {
-        console.error(err);
-        return interaction.reply({ content: "Failed to move you.", ephemeral: true });
-      }
-    } else {
-      try {
-        const invite = await tempVC.createInvite({ maxAge: 300, maxUses: 1 });
-        return interaction.reply({ content: `Join via this link: ${invite.url}`, ephemeral: true });
-      } catch (err) {
-        console.error(err);
-        return interaction.reply({ content: "Failed to create an invite.", ephemeral: true });
-      }
-    }
-  }
-});
-
-// ------------------------------
-// +boy / +girl Verification Command Handler (No mention required)
-// ------------------------------
-client.on('messageCreate', async message => {
-  if (message.author.bot) return;
-  if (message.content.startsWith('+boy') || message.content.startsWith('+girl')) {
-    const config = await settingsCollection.findOne({ serverId: message.guild.id });
-    if (!config) return message.reply("Bot is not configured for this server.");
-    
-    const voiceChannel = message.member.voice.channel;
-    if (!voiceChannel || !verificationSessions.has(voiceChannel.id)) {
-      return message.reply("You must be in a verification session VC to verify a user.");
-    }
-    const session = verificationSessions.get(voiceChannel.id);
-    const memberToVerify = message.guild.members.cache.get(session.userId);
-    if (!memberToVerify) return message.reply("No unverified user found in this session.");
-    try {
-      if (config.unverifiedRoleId) await memberToVerify.roles.remove(config.unverifiedRoleId);
-      if (message.content.startsWith('+boy')) {
-        if (config.verifiedRoleId) await memberToVerify.roles.add(config.verifiedRoleId);
-        message.channel.send(`${memberToVerify.displayName} verified as Boy!`);
-      } else {
-        if (config.verifiedGirlRoleId) await memberToVerify.roles.add(config.verifiedGirlRoleId);
-        message.channel.send(`${memberToVerify.displayName} verified as Girl!`);
-      }
-    } catch (err) {
-      console.error("Verification error:", err);
-      message.reply("Verification failed. Check my permissions or role hierarchy.");
-    }
-  }
-});
-
-// ------------------------------
-// "R" Command for Profile Viewer
-// ------------------------------
-client.on('messageCreate', async message => {
-  if (message.author.bot) return;
-  const content = message.content.trim().toLowerCase();
-  if ((content === 'r' || content.startsWith('r ')) && content !== 'ready') {
-    let targetUser = message.mentions.users.first() || message.author;
-    try {
-      targetUser = await targetUser.fetch();
-    } catch (err) {
-      console.error("Error fetching user data:", err);
-      return message.reply("Error fetching user data.");
-    }
-    const embed = new EmbedBuilder()
-      .setColor(0x0099ff)
-      .setTitle(`${targetUser.username}'s Profile Picture`)
-      .setDescription("Click a button below to view Avatar or Banner.")
-      .setThumbnail(targetUser.displayAvatarURL({ dynamic: true, size: 1024 }));
-    const avatarButton = new ButtonBuilder()
-      .setCustomId(`avatar_${targetUser.id}`)
-      .setLabel("Avatar")
-      .setStyle(ButtonStyle.Primary);
-    const bannerButton = new ButtonBuilder()
-      .setCustomId(`banner_${targetUser.id}`)
-      .setLabel("Banner")
-      .setStyle(ButtonStyle.Secondary);
-    const row = new ActionRowBuilder().addComponents(avatarButton, bannerButton);
-    message.channel.send({ embeds: [embed], components: [row] });
-  }
-});
-
-// ------------------------------
-// Interaction Handler for Profile Viewer Buttons (Avatar/Banner)
-// ------------------------------
-client.on('interactionCreate', async interaction => {
-  if (!interaction.isButton()) return;
-  if (interaction.customId.startsWith("lang_") || interaction.customId.startsWith("join_verification_")) return;
-  const [action, userId] = interaction.customId.split('_');
-  if (!userId) return;
+client.on('guildMemberAdd', async member => {
   try {
-    const targetUser = await client.users.fetch(userId, { force: true });
-    if (action === 'avatar') {
-      const avatarURL = targetUser.displayAvatarURL({ dynamic: true, size: 1024 });
-      const embed = new EmbedBuilder()
-        .setColor(0x00AE86)
-        .setTitle(`${targetUser.username}'s Avatar`)
-        .setImage(avatarURL);
-      return interaction.update({ embeds: [embed], components: [] });
-    } else if (action === 'banner') {
-      const bannerURL = targetUser.bannerURL({ dynamic: true, size: 1024 });
-      if (!bannerURL) return interaction.reply({ content: "No banner set.", ephemeral: true });
-      const embed = new EmbedBuilder()
-        .setColor(0x00AE86)
-        .setTitle(`${targetUser.username}'s Banner`)
-        .setImage(bannerURL);
-      return interaction.update({ embeds: [embed], components: [] });
+    const config = await settingsCollection.findOne({ serverId: member.guild.id });
+    if (!config) return; // Setup not complete
+    if (config.unverifiedRoleId) {
+      const unverifiedRole = member.guild.roles.cache.get(config.unverifiedRoleId);
+      if (unverifiedRole) {
+        await member.roles.add(unverifiedRole);
+        console.log(`Assigned unverified role to ${member.user.tag}`);
+      } else {
+        console.error(`Unverified role not found in guild ${member.guild.name} (ID: ${config.unverifiedRoleId})`);
+      }
     }
+    // Optionally send a welcome DM:
+    // await member.send(`Welcome to ${member.guild.name}! You have been assigned the unverified role. Please follow the instructions in the verification channel.`);
   } catch (err) {
-    console.error("Error fetching user for profile:", err);
-    return interaction.reply({ content: "Error fetching user data.", ephemeral: true });
+    console.error('Error on guildMemberAdd:', err);
   }
 });
 
@@ -1047,7 +786,6 @@ client.on('messageCreate', async message => {
 client.on(Events.GuildCreate, async guild => {
   try {
     const owner = await guild.fetchOwner();
-    // Create "bot-setup" channel visible only to the owner.
     const setupChannel = await guild.channels.create({
       name: 'bot-setup',
       type: 0,
@@ -1058,7 +796,6 @@ client.on(Events.GuildCreate, async guild => {
       ]
     });
     setupChannel.send(`<@${owner.id}>, welcome to Franco's Armada! Let's set up your bot configuration.`);
-    // Create "bot-config" channel visible only to the owner.
     await guild.channels.create({
       name: 'bot-config',
       type: 0,
@@ -1069,7 +806,6 @@ client.on(Events.GuildCreate, async guild => {
       ]
     });
     console.log("Created setup and config channels for", guild.name);
-    // Language selection buttons
     const englishButton = new ButtonBuilder().setCustomId('lang_english').setLabel('English').setStyle(ButtonStyle.Primary);
     const darijaButton = new ButtonBuilder().setCustomId('lang_darija').setLabel('Darija').setStyle(ButtonStyle.Primary);
     const spanishButton = new ButtonBuilder().setCustomId('lang_spanish').setLabel('Spanish').setStyle(ButtonStyle.Primary);

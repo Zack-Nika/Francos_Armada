@@ -817,10 +817,12 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
           }
         }
         
-        // Create the ephemeral voice channel
+        // Create the ephemeral voice channel inside the same category as the one-tap channel
+        const parentCategory = newState.channel.parentId; // Using the parent of the one-tap channel
         const ephemeralChannel = await guild.channels.create({
           name: `${member.displayName}'s Room`,
           type: 2, // Voice channel
+          parent: parentCategory, // Set the parent category so it doesn't float up
           permissionOverwrites: [
             {
               id: guild.id,

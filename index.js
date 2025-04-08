@@ -1,5 +1,5 @@
 // index.js
-// Franco's Armada Bot – Final Complete Code with Debug Logging for Verification Commands
+// Franco's Armada Bot – Final Complete Code with Debug Logging for Verification Commands & Need Help Process
 // FEATURES:
 // • Connects to MongoDB for per‑server settings (language, prefix, role/channel IDs, custom welcome message, etc.).
 // • On guild join, creates "bot‑setup" and "bot‑config" channels (visible only to the owner).
@@ -13,13 +13,17 @@
 //     – In that VC, the verificator simply types “+boy” or “+girl” (without mentioning the user) in the channel’s built‑in chat to verify.
 //     – When the verificator leaves, the bot moves the verified user to an available channel.
 // • One‑Tap Process:
-//     – When a verified user joins the designated one‑tap channel, an ephemeral VC named "[displayName]'s Room" is created.
+//     – When a verified user joins the designated one‑tap channel, an ephemeral VC named "[displayName]'s Room" is created
+//        inside the same category as the one‑tap channel.
 //     – If a previous one‑tap session exists for that user, it is deleted first.
 //     – The ephemeral VC’s permission overwrites prevent unverified users from connecting.
 // • Need‑Help Process:
-//     – When a member joins the designated need‑help channel, an ephemeral VC named "[displayName] needs help" is created.
-//     – A single alert is sent in the need‑help log channel in big bold text (e.g. "# Franco 🔱 needs help 🆘️")
-//        plus a "Join Help" button. The alert auto‑deletes after 11 seconds or immediately if a helper joins.
+//     – When a member joins the designated need‑help channel, an ephemeral VC named "[displayName] needs help" is created
+//        inside the same category as the need‑help channel.
+//     – The member is moved into that ephemeral channel.
+//     – An alert is sent in the designated need‑help log channel (if set), with an embed message (e.g. "# Franco 🔱 needs help 🆘️")
+//        and a "Join Help" button (custom ID: join_help_<ephemeralChannelId>). The alert auto‑deletes after 11 seconds
+//        if no helper joins.
 //     – When the need‑help session owner leaves, the channel is deleted immediately.
 // • Global slash commands (e.g. /setprefix, /setwelcome, /showwelcome, /jail, /jinfo, /unban, /binfo, /topvrf, /toponline)
 //     are available to admins/owners.
@@ -321,6 +325,59 @@ const { Routes: Routes2 } = require('discord-api-types/v10');
     console.error(error);
   }
 })();
+
+// ------------------------------
+// Interaction Handler for Buttons
+// ------------------------------
+client.on('interactionCreate', async interaction => {
+  if (!interaction.isButton()) return;
+  // Handle Join Help button
+  if (interaction.customId.startsWith("join_help_")) {
+    // Expected format: "join_help_<ephemeralChannelId>"
+    const parts = interaction.customId.split("_");
+    const ephemeralChannelId = parts.slice(2).join("_"); // in case ID contains underscores
+    const session = onetapSessions.get(ephemeralChannelId);
+    if (!session) {
+      return interaction.reply({ content: "No help session found.", flags: 64, ephemeral: true });
+    }
+    try {
+      await interaction.member.voice.setChannel(ephemeralChannelId);
+      return interaction.reply({ content: "You've joined the help session!", flags: 64, ephemeral: true });
+    } catch (err) {
+      console.error("join_help error:", err);
+      return interaction.reply({ content: "Failed to join help session.", flags: 64, ephemeral: true });
+    }
+  }
+  
+  // Handle Profile Viewer buttons (Avatar/Banner)
+  if (interaction.customId.startsWith("lang_")) return; // Already handled in language selection
+  if (interaction.customId.startsWith("avatar_") || interaction.customId.startsWith("banner_")) {
+    const [action, userId] = interaction.customId.split('_');
+    if (!userId) return;
+    try {
+      const targetUser = await client.users.fetch(userId, { force: true });
+      if (action === 'avatar') {
+        const avatarURL = targetUser.displayAvatarURL({ dynamic: true, size: 1024 });
+        const embed = new EmbedBuilder()
+          .setColor(0x00AE86)
+          .setTitle(`${targetUser.username}'s Avatar`)
+          .setImage(avatarURL);
+        return interaction.update({ embeds: [embed], components: [] });
+      } else if (action === 'banner') {
+        const bannerURL = targetUser.bannerURL({ dynamic: true, size: 1024 });
+        if (!bannerURL) return interaction.reply({ content: "No banner set.", flags: 64 });
+        const embed = new EmbedBuilder()
+          .setColor(0x00AE86)
+          .setTitle(`${targetUser.username}'s Banner`)
+          .setImage(bannerURL);
+        return interaction.update({ embeds: [embed], components: [] });
+      }
+    } catch (e) {
+      console.error(e);
+      return interaction.reply({ content: "Error fetching user data.", flags: 64 });
+    }
+  }
+});
 
 // ------------------------------
 // Slash Command Interaction Handler
@@ -659,41 +716,6 @@ client.on('messageCreate', async message => {
 });
 
 // ------------------------------
-// Interaction Handler for Profile Viewer Buttons (R Command)
-// ------------------------------
-client.on('interactionCreate', async interaction => {
-  if (!interaction.isButton()) return;
-  if (interaction.customId.startsWith("lang_") ||
-      interaction.customId.startsWith("join_verification_") ||
-      interaction.customId.startsWith("join_help_"))
-    return;
-  const [action, userId] = interaction.customId.split('_');
-  if (!userId) return;
-  try {
-    const targetUser = await client.users.fetch(userId, { force: true });
-    if (action === 'avatar') {
-      const avatarURL = targetUser.displayAvatarURL({ dynamic: true, size: 1024 });
-      const embed = new EmbedBuilder()
-        .setColor(0x00AE86)
-        .setTitle(`${targetUser.username}'s Avatar`)
-        .setImage(avatarURL);
-      return interaction.update({ embeds: [embed], components: [] });
-    } else if (action === 'banner') {
-      const bannerURL = targetUser.bannerURL({ dynamic: true, size: 1024 });
-      if (!bannerURL) return interaction.reply({ content: "No banner set.", flags: 64 });
-      const embed = new EmbedBuilder()
-        .setColor(0x00AE86)
-        .setTitle(`${targetUser.username}'s Banner`)
-        .setImage(bannerURL);
-      return interaction.update({ embeds: [embed], components: [] });
-    }
-  } catch (e) {
-    console.error(e);
-    return interaction.reply({ content: "Error fetching user data.", flags: 64 });
-  }
-});
-
-// ------------------------------
 // "Ready" Handler in "bot-setup" Channel
 // ------------------------------
 client.on('messageCreate', async message => {
@@ -780,13 +802,13 @@ client.on(Events.GuildMemberAdd, async member => {
 });
 
 // ------------------------------
-// ADDED FOR ONE-TAP: Voice State Handler
-// Automatically create ephemeral channels for one-tap when a verified user joins the designated one-tap channel
+// ADDED FOR ONE-TAP & NEED-HELP: Voice State Handler
+// Automatically create ephemeral channels when a verified user joins the designated one-tap or need-help channel
 // ------------------------------
 client.on('voiceStateUpdate', async (oldState, newState) => {
   try {
     console.log(`[DEBUG] voiceStateUpdate: oldState.channelId=${oldState.channelId}, newState.channelId=${newState.channelId}, member=${newState.member.id}`);
-    // Only process when joining a channel
+    // Only process when joining a channel (or switching channels)
     if (!oldState.channelId && newState.channelId) {
       const member = newState.member;
       const guild = newState.guild;
@@ -795,34 +817,37 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
         console.log("[DEBUG] No config found for this guild");
         return;
       }
-      // Check if the channel joined is the designated one-tap channel
+      
+      // ------------------------------
+      // One-Tap Process
+      // ------------------------------
       if (config.oneTapChannelId && newState.channelId === config.oneTapChannelId) {
         console.log(`[DEBUG] Member ${member.id} joined one-tap channel ${config.oneTapChannelId}`);
         
-        // Check if the member is verified (i.e., they should not have the unverified role)
+        // Check if the member is verified (i.e., they should NOT have the unverified role)
         if (config.unverifiedRoleId && member.roles.cache.has(config.unverifiedRoleId)) {
-          console.log(`[DEBUG] Member ${member.id} has unverified role, skipping ephemeral channel creation`);
+          console.log(`[DEBUG] Member ${member.id} has unverified role, skipping one-tap ephemeral channel creation`);
           return;
         }
         
-        // Remove any existing ephemeral channel for this user
+        // Remove any existing one-tap ephemeral channel for this user
         for (const [channelId, session] of onetapSessions.entries()) {
-          if (session.owner === member.id) {
+          if (session.owner === member.id && session.type !== "needHelp") {
             const oldChan = guild.channels.cache.get(channelId);
             if (oldChan) {
-              console.log(`[DEBUG] Deleting old ephemeral channel ${oldChan.id} for member ${member.id}`);
+              console.log(`[DEBUG] Deleting old one-tap ephemeral channel ${oldChan.id} for member ${member.id}`);
               await oldChan.delete().catch(() => {});
             }
             onetapSessions.delete(channelId);
           }
         }
         
-        // Create the ephemeral voice channel inside the same category as the one-tap channel
-        const parentCategory = newState.channel.parentId; // Using the parent of the one-tap channel
+        // Create the ephemeral voice channel in the same category as the one-tap channel
+        const parentCategory = newState.channel.parentId;
         const ephemeralChannel = await guild.channels.create({
           name: `${member.displayName}'s Room`,
           type: 2, // Voice channel
-          parent: parentCategory, // Set the parent category so it doesn't float up
+          parent: parentCategory,
           permissionOverwrites: [
             {
               id: guild.id,
@@ -844,17 +869,110 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
           ]
         });
         
-        console.log(`[DEBUG] Created ephemeral channel ${ephemeralChannel.id} for member ${member.id}`);
+        console.log(`[DEBUG] Created one-tap ephemeral channel ${ephemeralChannel.id} for member ${member.id}`);
         
-        // Store the session info
+        // Store the session info (mark as type "oneTap")
         onetapSessions.set(ephemeralChannel.id, {
           owner: member.id,
+          type: "oneTap",
           rejectedUsers: []
         });
         
         // Move the member to the new ephemeral channel
         await member.voice.setChannel(ephemeralChannel);
-        console.log(`[DEBUG] Moved member ${member.id} to ephemeral channel ${ephemeralChannel.id}`);
+        console.log(`[DEBUG] Moved member ${member.id} to one-tap ephemeral channel ${ephemeralChannel.id}`);
+      }
+      
+      // ------------------------------
+      // Need-Help Process
+      // ------------------------------
+      if (config.needHelpChannelId && newState.channelId === config.needHelpChannelId) {
+        console.log(`[DEBUG] Member ${member.id} joined need-help channel ${config.needHelpChannelId}`);
+        
+        // You can allow even unverified members to request help, or enforce verification similar to one-tap.
+        // For now, we'll enforce: if they still have the unverified role, skip.
+        if (config.unverifiedRoleId && member.roles.cache.has(config.unverifiedRoleId)) {
+          console.log(`[DEBUG] Member ${member.id} has unverified role, skipping need-help ephemeral channel creation`);
+          return;
+        }
+        
+        // Remove any existing need-help ephemeral channel for this user
+        for (const [channelId, session] of onetapSessions.entries()) {
+          if (session.owner === member.id && session.type === "needHelp") {
+            const oldChan = guild.channels.cache.get(channelId);
+            if (oldChan) {
+              console.log(`[DEBUG] Deleting old need-help ephemeral channel ${oldChan.id} for member ${member.id}`);
+              await oldChan.delete().catch(() => {});
+            }
+            onetapSessions.delete(channelId);
+          }
+        }
+        
+        // Create the ephemeral voice channel for need help inside the same category as the need-help channel
+        const parentCategory = newState.channel.parentId;
+        const ephemeralChannel = await guild.channels.create({
+          name: `${member.displayName} needs help`,
+          type: 2, // Voice channel
+          parent: parentCategory,
+          permissionOverwrites: [
+            {
+              id: guild.id,
+              allow: [PermissionsBitField.Flags.Connect, PermissionsBitField.Flags.ViewChannel]
+            },
+            {
+              id: config.unverifiedRoleId || '0',
+              deny: [PermissionsBitField.Flags.Connect]
+            },
+            {
+              id: member.id,
+              allow: [
+                PermissionsBitField.Flags.Connect,
+                PermissionsBitField.Flags.Speak,
+                PermissionsBitField.Flags.Stream,
+                PermissionsBitField.Flags.AttachFiles
+              ]
+            }
+          ]
+        });
+        
+        console.log(`[DEBUG] Created need-help ephemeral channel ${ephemeralChannel.id} for member ${member.id}`);
+        
+        // Store session info (mark as type "needHelp")
+        onetapSessions.set(ephemeralChannel.id, {
+          owner: member.id,
+          type: "needHelp",
+          rejectedUsers: []
+        });
+        
+        // Move the member to the need-help ephemeral channel
+        await member.voice.setChannel(ephemeralChannel);
+        console.log(`[DEBUG] Moved member ${member.id} to need-help ephemeral channel ${ephemeralChannel.id}`);
+        
+        // Send the alert message in the need-help log channel if configured
+        if (config.needHelpLogChannelId && config.needHelpLogChannelId !== "none") {
+          const logChannel = guild.channels.cache.get(config.needHelpLogChannelId);
+          if (logChannel) {
+            const helpEmbed = new EmbedBuilder()
+              .setColor(0xFF0000)
+              .setTitle(`# ${member.displayName} 🔱 needs help 🆘️`);
+            const joinButton = new ButtonBuilder()
+              .setCustomId(`join_help_${ephemeralChannel.id}`)
+              .setLabel("Join Help")
+              .setStyle(ButtonStyle.Danger);
+            const row = new ActionRowBuilder().addComponents(joinButton);
+            const alertMsg = await logChannel.send({ embeds: [helpEmbed], components: [row] });
+            console.log(`[DEBUG] Sent need-help alert in log channel for ephemeral channel ${ephemeralChannel.id}`);
+            // Delete the alert after 11 seconds if still there
+            setTimeout(async () => {
+              try {
+                await alertMsg.delete();
+                console.log(`[DEBUG] Deleted need-help alert for ephemeral channel ${ephemeralChannel.id}`);
+              } catch (err) {
+                // Message may have been deleted already if a helper joined
+              }
+            }, 11000);
+          }
+        }
       }
     }
   } catch (err) {

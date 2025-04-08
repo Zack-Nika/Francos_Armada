@@ -1,5 +1,5 @@
 // index.js
-// Franco's Armada Bot – Final Complete Code with Immediate Empty Channel Deletion
+// Franco's Armada Bot – Final Complete Code (with Multi-Language Setup)
 // FEATURES:
 // • Connects to MongoDB for per‑server settings (language, prefix, role/channel IDs, custom welcome message, etc.).
 // • On guild join, creates "bot‑setup" and "bot‑config" channels (visible only to the owner).
@@ -7,24 +7,27 @@
 // • Interactive multi‑language setup triggered by the owner typing "ready" in the "bot‑setup" channel.
 // • Verification Process:
 //     – When an unverified user joins the designated permanent verification channel, an ephemeral VC named 
-//        "Verify – [displayName]" is created with userLimit 2 and with explicit permissions to connect, speak, and attach files.
-//     – A single notification is sent in the alert channel with big bold text using “#” (for example, “# New Member Ajew 🙋‍♂️”) plus a “Join Verification” button.
-//         • This alert message is scheduled to delete after 11 seconds if no verificator joins; if a verificator joins, it is deleted immediately.
-//     – In that VC, the verificator simply types “+boy” or “+girl” to verify the user.
-//     – When the verificator leaves, the bot moves the verified user to an available channel.
+//        "Verify – [displayName]" is created (userLimit: 2) with permissions to connect, speak, and attach files.
+//     – A single alert message is sent in the verification alert channel using big, bold text (prefixed with "#")
+//        plus one "Join Verification" button. The alert message auto‑deletes after 11 seconds unless a verificator joins (in which case it is deleted immediately).
+//     – In that VC, the verificator simply types "+boy" or "+girl" (with no mention required) to verify the user.
+//     – When the verificator leaves, the bot moves the verified user to an available channel (or back to the permanent VC).
 // • One‑Tap Process:
-//     – When a verified user joins the designated one‑tap channel, an ephemeral VC named “[displayName]'s Room” is created.
-//     – If the user already had an ephemeral session, the previous one is deleted first.
+//     – When a verified user joins the designated one‑tap channel, an ephemeral VC named "[displayName]'s Room" is created.
+//     – If the user already had a previous one‑tap session, it is deleted first.
 //     – The ephemeral VC’s permission overwrites prevent the unverified role from viewing or connecting.
-//     – No separate text channel is created—the voice channel’s built‑in chat is used (with AttachFiles allowed).
+//     – The voice channel’s built‑in text chat is used (with AttachFiles allowed).
 // • Need‑Help Process:
-//     – When a member joins the designated need‑help channel, an ephemeral VC named “[displayName] needs help” is created.
-//     – A single notification is sent in the help log channel with big bold text in the format “# {DisplayName} needs help 🆘️” plus a “Join Help” button.
-//         • This message is auto‑deleted after 11 seconds if no helper joins; if someone does join, it is removed immediately.
-// • Global slash commands (e.g. /setprefix, /setwelcome, /showwelcome, /jail, /jinfo, /unban, /binfo, /topvrf, /toponline) are available to admins/owners.
-// • One‑Tap / Need‑Help session management commands (e.g. /claim, /mute, /unmute, /lock, /unlock, /limit, /reject, /perm, /hide, /unhide, /transfer, /name, /status, /help) are available to session participants.
-// • The “R” command shows a user’s profile picture (with Avatar/Banner buttons) in a single response.
-// • Ephemeral channels are deleted immediately when they become empty (no timer) and a periodic cleanup (every 2 seconds) is used as a fallback.
+//     – When a member joins the designated need‑help channel, an ephemeral VC named "[displayName] needs help" is created.
+//     – A single alert is sent in the need‑help log channel in big bold text (e.g. "# Franco 🔱 needs help 🆘️") plus a "Join Help" button.
+//         • The alert auto‑deletes after 11 seconds or immediately if a helper joins.
+//     – When the need‑help session owner leaves, the channel is deleted immediately.
+// • Global slash commands (e.g. /setprefix, /setwelcome, /showwelcome, /jail, /jinfo, /unban, /binfo, /topvrf, /toponline)
+//     are available for admins/owners.
+// • Session management slash commands (e.g. /claim, /mute, /unmute, /lock, /unlock, /limit, /reject, /perm, /hide, /unhide, /transfer, /name, /status, /help)
+//     are available for users in an ephemeral session.
+// • The "R" command displays a user’s profile picture (with Avatar/Banner buttons) once.
+// • Empty ephemeral channels are deleted immediately (plus a periodic cleanup every 2 seconds).
 
 require('dotenv').config();
 const {
@@ -96,7 +99,7 @@ const onetapSessions = new Map();       // For ephemeral one-tap and need-help V
 const jailData = new Map();
 
 // ------------------------------
-// Language Data (English Only; add others as needed)
+// Multi-Language Data
 // ------------------------------
 const languagePrompts = {
   english: {
@@ -113,6 +116,66 @@ const languagePrompts = {
     needHelpChannelId: "🔹 **# Provide the Need Help Channel ID**",
     helperRoleId: "🔹 **# Provide the Helper Role ID**",
     needHelpLogChannelId: "🔹 **# Provide the Need Help Log Channel ID** (or type `none`)"
+  },
+  darija: {
+    verifiedRoleId: "🔹 **# 3afak 3tini l'ID dyal Verified Boy Role**",
+    unverifiedRoleId: "🔹 **# 3afak 3tini l'ID dyal Unverified Role**",
+    verifiedGirlRoleId: "🔹 **# 3afak 3tini l'ID dyal Verified Girl Role**",
+    verificatorRoleId: "🔹 **# 3tini l'ID dyal Verificator Role**",
+    voiceVerificationChannelId: "🔹 **# 3tini l'ID dyal Permanent Verification Channel**",
+    oneTapChannelId: "🔹 **# 3tini l'ID dyal One-Tap Channel**",
+    verificationAlertChannelId: "🔹 **# 3tini l'ID dyal Verification Alert Channel**",
+    jailRoleId: "🔹 **# 3tini l'ID dyal Jail Role** (aw 'none')",
+    voiceJailChannelId: "🔹 **# 3tini l'ID dyal Voice Jail Channel** (aw 'none')",
+    verificationLogChannelId: "🔹 **# 3tini l'ID dyal Verification Log Channel** (aw 'none')",
+    needHelpChannelId: "🔹 **# 3tini l'ID dyal Need Help Channel**",
+    helperRoleId: "🔹 **# 3tini l'ID dyal Helper Role**",
+    needHelpLogChannelId: "🔹 **# 3tini l'ID dyal Need Help Log Channel** (aw 'none')"
+  },
+  spanish: {
+    verifiedRoleId: "🔹 **# Proporciona el ID del rol de Chico Verificado**",
+    unverifiedRoleId: "🔹 **# Proporciona el ID del rol de No Verificado**",
+    verifiedGirlRoleId: "🔹 **# Proporciona el ID del rol de Chica Verificada**",
+    verificatorRoleId: "🔹 **# Proporciona el ID del rol de Verificador**",
+    voiceVerificationChannelId: "🔹 **# Proporciona el ID del canal permanente de verificación**",
+    oneTapChannelId: "🔹 **# Proporciona el ID del canal One-Tap**",
+    verificationAlertChannelId: "🔹 **# Proporciona el ID del canal de alertas de verificación**",
+    jailRoleId: "🔹 **# Proporciona el ID del rol de Cárcel** (o escribe `none`)",
+    voiceJailChannelId: "🔹 **# Proporciona el ID del canal de voz de Cárcel** (o escribe `none`)",
+    verificationLogChannelId: "🔹 **# Proporciona el ID del canal de registro de verificación** (o escribe `none`)",
+    needHelpChannelId: "🔹 **# Proporciona el ID del canal de ayuda**",
+    helperRoleId: "🔹 **# Proporciona el ID del rol de Ayudante**",
+    needHelpLogChannelId: "🔹 **# Proporciona el ID del canal de registro de ayuda** (o escribe `none`)"
+  },
+  russian: {
+    verifiedRoleId: "🔹 **# Укажите ID роли для подтвержденных мальчиков (Verified Boy)**",
+    unverifiedRoleId: "🔹 **# Укажите ID роли для новичков (Unverified)**",
+    verifiedGirlRoleId: "🔹 **# Укажите ID роли для подтвержденных девочек (Verified Girl)**",
+    verificatorRoleId: "🔹 **# Укажите ID роли проверяющих (Verificator)**",
+    voiceVerificationChannelId: "🔹 **# Укажите ID постоянного канала верификации**",
+    oneTapChannelId: "🔹 **# Укажите ID канала One-Tap**",
+    verificationAlertChannelId: "🔹 **# Укажите ID канала уведомлений верификации**",
+    jailRoleId: "🔹 **# Укажите ID роли Jail** (или введите `none`)",
+    voiceJailChannelId: "🔹 **# Укажите ID голосового канала Jail** (или введите `none`)",
+    verificationLogChannelId: "🔹 **# Укажите ID канала журнала верификации** (или введите `none`)",
+    needHelpChannelId: "🔹 **# Укажите ID канала помощи**",
+    helperRoleId: "🔹 **# Укажите ID роли помощника**",
+    needHelpLogChannelId: "🔹 **# Укажите ID канала журнала помощи** (или введите `none`)"
+  },
+  french: {
+    verifiedRoleId: "🔹 **# Fournissez l'ID du rôle Garçon Vérifié**",
+    unverifiedRoleId: "🔹 **# Fournissez l'ID du rôle Non Vérifié**",
+    verifiedGirlRoleId: "🔹 **# Fournissez l'ID du rôle Fille Vérifiée**",
+    verificatorRoleId: "🔹 **# Fournissez l'ID du rôle Vérificateur**",
+    voiceVerificationChannelId: "🔹 **# Fournissez l'ID du canal permanent de vérification**",
+    oneTapChannelId: "🔹 **# Fournissez l'ID du canal One-Tap**",
+    verificationAlertChannelId: "🔹 **# Fournissez l'ID du canal d'alertes de vérification**",
+    jailRoleId: "🔹 **# Fournissez l'ID du rôle Jail** (ou tapez `none`)",
+    voiceJailChannelId: "🔹 **# Fournissez l'ID du canal vocal Jail** (ou tapez `none`)",
+    verificationLogChannelId: "🔹 **# Fournissez l'ID du canal de log de vérification** (ou tapez `none`)",
+    needHelpChannelId: "🔹 **# Fournissez l'ID du canal d'aide**",
+    helperRoleId: "🔹 **# Fournissez l'ID du rôle Aide**",
+    needHelpLogChannelId: "🔹 **# Fournissez l'ID du canal de log d'aide** (ou tapez `none`)"
   }
 };
 
@@ -120,6 +183,22 @@ const languageExtras = {
   english: {
     setupStart: "Let's begin setup. Please copy/paste each ID as prompted.",
     setupComplete: "Setup complete! 🎉"
+  },
+  darija: {
+    setupStart: "Nbda setup. Copier-coller kol ID mlli ytalbo menk.",
+    setupComplete: "Setup sali! 🎉"
+  },
+  spanish: {
+    setupStart: "Empecemos la configuración. Copia/pega cada ID cuando se te solicite.",
+    setupComplete: "¡Configuración completa! 🎉"
+  },
+  russian: {
+    setupStart: "Давайте начнем настройку. Вставьте каждый ID по запросу.",
+    setupComplete: "Настройка завершена! 🎉"
+  },
+  french: {
+    setupStart: "Commençons la configuration. Copiez-collez chaque ID demandé.",
+    setupComplete: "Configuration terminée! 🎉"
   }
 };
 
@@ -205,7 +284,7 @@ const slashCommands = [
     .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
   new SlashCommandBuilder().setName('toponline').setDescription('Show top online users')
     .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
-  // Session (One-tap/Need-help) Commands
+  // Session (one-tap/need-help) Commands
   new SlashCommandBuilder().setName('claim').setDescription('Claim ownership of your session'),
   new SlashCommandBuilder().setName('mute').setDescription('Mute a user in your session')
     .addUserOption(o => o.setName('target').setDescription('User to mute').setRequired(true)),
@@ -256,7 +335,7 @@ client.on('interactionCreate', async interaction => {
     return interaction.reply({ content: "Bot is not configured for this server.", flags: 64 });
   }
   
-  const globalCmds = ["setprefix", "setwelcome", "showwelcome", "jail", "jinfo", "unban", "binfo", "topvrf", "toponline"];
+  const globalCmds = ["setprefix","setwelcome","showwelcome","jail","jinfo","unban","binfo","topvrf","toponline"];
   if (globalCmds.includes(commandName)) {
     if (!interaction.memberPermissions.has(PermissionsBitField.Flags.Administrator) &&
         interaction.member.id !== interaction.guild.ownerId) {
@@ -340,7 +419,7 @@ client.on('interactionCreate', async interaction => {
     return;
   }
   
-  // Otherwise, assume session (one-tap / need-help) commands
+  // Session Commands (One-Tap / Need Help)
   const member = interaction.member;
   const currentVC = member.voice.channel;
   if (!currentVC || !onetapSessions.has(currentVC.id)) {
@@ -420,9 +499,7 @@ client.on('interactionCreate', async interaction => {
         await targetMember.voice.disconnect();
       }
       session.rejectedUsers = session.rejectedUsers || [];
-      if (!session.rejectedUsers.includes(target.id)) {
-        session.rejectedUsers.push(target.id);
-      }
+      if (!session.rejectedUsers.includes(target.id)) session.rejectedUsers.push(target.id);
       onetapSessions.set(currentVC.id, session);
       return interaction.reply({ content: `User ${target.username} rejected.`, flags: 64 });
     } catch(e) {
@@ -435,9 +512,7 @@ client.on('interactionCreate', async interaction => {
     if (!target) return interaction.reply({ content: "Please mention a user.", flags: 64 });
     session.rejectedUsers = session.rejectedUsers || [];
     const idx = session.rejectedUsers.indexOf(target.id);
-    if (idx === -1) {
-      return interaction.reply({ content: "User is not rejected.", flags: 64 });
-    }
+    if (idx === -1) return interaction.reply({ content: "User is not rejected.", flags: 64 });
     session.rejectedUsers.splice(idx, 1);
     onetapSessions.set(currentVC.id, session);
     return interaction.reply({ content: `User ${target.username} is now permitted.`, flags: 64 });
@@ -516,14 +591,15 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
       const unverifiedRole = guild.roles.cache.get(config.unverifiedRoleId);
       if (!unverifiedRole) return;
       if (!member.roles.cache.has(unverifiedRole.id)) return;
-      // Create ephemeral verification VC with "Speak" permission so member can talk.
+      // Create ephemeral VC with Connect, Speak, and AttachFiles permissions.
       const tempVC = await guild.channels.create({
         name: `Verify – ${member.displayName}`,
         type: 2,
         parent: newState.channel.parentId,
         userLimit: 2,
         permissionOverwrites: [
-          { id: member.id,
+          { 
+            id: member.id,
             allow: [
               PermissionsBitField.Flags.Connect,
               PermissionsBitField.Flags.Speak,
@@ -535,7 +611,7 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
       await member.voice.setChannel(tempVC);
       verificationSessions.set(tempVC.id, { userId: member.id, assignedVerificator: null, alertMessageId: null });
       
-      // Send a single notification with big bold text and button.
+      // Send a single verification alert with big bold text and a button.
       const alertChannel = guild.channels.cache.get(config.verificationAlertChannelId);
       if (alertChannel) {
         const joinButton = new ButtonBuilder()
@@ -550,7 +626,6 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
         const sessionData = verificationSessions.get(tempVC.id);
         sessionData.alertMessageId = alertMsg.id;
         verificationSessions.set(tempVC.id, sessionData);
-        // Delete the alert after 11 seconds if no verificator has joined.
         setTimeout(async () => {
           const currentData = verificationSessions.get(tempVC.id);
           if (currentData && !currentData.assignedVerificator) {
@@ -570,12 +645,12 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
       const member = newState.member;
       const isVerified = member.roles.cache.has(config.verifiedRoleId) || member.roles.cache.has(config.verifiedGirlRoleId);
       if (!isVerified) return;
-      // Delete any previous session for this user.
+      // Delete any previous one-tap session for this user.
       const existingEntry = Array.from(onetapSessions.entries()).find(([chId, s]) => s.owner === member.id);
       if (existingEntry) {
         const [oldChId] = existingEntry;
-        const oldCh = guild.channels.cache.get(oldChId);
-        if (oldCh) await oldCh.delete().catch(() => {});
+        const oldChannel = guild.channels.cache.get(oldChId);
+        if (oldChannel) await oldChannel.delete().catch(() => {});
         onetapSessions.delete(oldChId);
       }
       const overwrites = [];
@@ -645,26 +720,24 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
     }
   }
   
-  // Immediate Deletion: If an ephemeral channel becomes empty, delete it immediately.
+  // Immediate Deletion: When an ephemeral channel becomes empty, delete it immediately.
   if (oldState.channel) {
-    // For one-tap/need-help session channels
     if (onetapSessions.has(oldState.channel.id)) {
       if (oldState.channel.members.size === 0) {
         try {
           await oldState.channel.delete();
         } catch (err) {
-          console.error("Immediate deletion failed for channel", oldState.channel.id, err);
+          console.error("Failed immediate deletion for channel", oldState.channel.id, err);
         }
         onetapSessions.delete(oldState.channel.id);
       }
     }
-    // For verification sessions
     if (verificationSessions.has(oldState.channel.id)) {
       if (oldState.channel.members.size === 0) {
         try {
           await oldState.channel.delete();
         } catch (err) {
-          console.error("Immediate deletion failed for verification channel", oldState.channel.id, err);
+          console.error("Failed immediate deletion for verification channel", oldState.channel.id, err);
         }
         verificationSessions.delete(oldState.channel.id);
       }
@@ -818,7 +891,7 @@ client.on('messageCreate', async message => {
 });
 
 // ------------------------------
-// Interaction Handler for R Buttons
+// Interaction Handler for Profile Viewer Buttons (R Command)
 // ------------------------------
 client.on('interactionCreate', async interaction => {
   if (!interaction.isButton()) return;
@@ -905,6 +978,7 @@ client.on(Events.GuildCreate, async guild => {
         { id: owner.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] }
       ]
     });
+    // Language selection buttons (all languages provided)
     const englishButton = new ButtonBuilder().setCustomId('lang_english').setLabel('English').setStyle(ButtonStyle.Primary);
     const darijaButton = new ButtonBuilder().setCustomId('lang_darija').setLabel('Darija').setStyle(ButtonStyle.Primary);
     const spanishButton = new ButtonBuilder().setCustomId('lang_spanish').setLabel('Spanish').setStyle(ButtonStyle.Primary);
@@ -938,10 +1012,9 @@ client.on(Events.GuildMemberAdd, async member => {
 });
 
 // ------------------------------
-// Periodic Cleanup: Check for Empty Ephemeral Channels Every 2 Seconds
+// Periodic Cleanup: Delete Empty Ephemeral Channels (Every 2 seconds)
 // ------------------------------
 setInterval(async () => {
-  // Check one-tap/need-help sessions
   for (const [channelId, session] of onetapSessions.entries()) {
     const channel = client.channels.cache.get(channelId);
     if (channel && channel.type === 2 && channel.members.size === 0) {
@@ -953,7 +1026,6 @@ setInterval(async () => {
       onetapSessions.delete(channelId);
     }
   }
-  // Check verification sessions
   for (const [channelId, session] of verificationSessions.entries()) {
     const channel = client.channels.cache.get(channelId);
     if (channel && channel.type === 2 && channel.members.size === 0) {

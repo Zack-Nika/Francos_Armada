@@ -1,9 +1,10 @@
 {
-  "name": "mbc-super-bot",
+  "name": "Franco's Armada 🔱",
   "version": "1.0.0",
   "description": "A multi-feature Discord bot for renting",
   "main": "index.js",
   "scripts": {
+    "prestart": "npm install--omit=dev"
     "start": "node index.js"
   },
   "dependencies": {

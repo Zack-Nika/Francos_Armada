@@ -1,16 +1,16 @@
 {
-  "name": "Franco's Armada 🔱",
+  "name": ""Franco's Armada 🔱",
   "version": "1.0.0",
-  "description": "A multi-feature Discord bot for renting",
+  "description": "Franco's Armada 🔱 – A multi-feature Discord bot",
   "main": "index.js",
   "scripts": {
-    "prestart": "npm install--omit=dev",
+    "prestart": "npm install --omit=dev",
     "start": "node index.js"
   },
   "dependencies": {
     "discord.js": "^14.0.0",
-    "dotenv": "^16.0.0",
     "@napi-rs/canvas": "^0.1.68",
+    "dotenv": "^16.0.0",
     "mongodb": "^5.1.0"
   }
 }

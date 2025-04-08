@@ -781,55 +781,56 @@ client.on(Events.GuildMemberAdd, async member => {
 
 // ------------------------------
 // ADDED FOR ONE-TAP: Voice State Handler
-// Automatically create ephemeral channels for one-tap
+// Automatically create ephemeral channels for one-tap when a verified user joins the designated one-tap channel
 // ------------------------------
 client.on('voiceStateUpdate', async (oldState, newState) => {
   try {
-    // If user connected to a voice channel (newState.channelId exists)
+    console.log(`[DEBUG] voiceStateUpdate: oldState.channelId=${oldState.channelId}, newState.channelId=${newState.channelId}, member=${newState.member.id}`);
+    // Only process when joining a channel
     if (!oldState.channelId && newState.channelId) {
       const member = newState.member;
       const guild = newState.guild;
       const config = await settingsCollection.findOne({ serverId: guild.id });
-      if (!config) return; // bot not configured
-
-      // Is this the one-tap channel?
+      if (!config) {
+        console.log("[DEBUG] No config found for this guild");
+        return;
+      }
+      // Check if the channel joined is the designated one-tap channel
       if (config.oneTapChannelId && newState.channelId === config.oneTapChannelId) {
-        // OPTIONAL: Check if user is actually verified
-        // by verifying if they do NOT have unverifiedRoleId
+        console.log(`[DEBUG] Member ${member.id} joined one-tap channel ${config.oneTapChannelId}`);
+        
+        // Check if the member is verified (i.e., they should not have the unverified role)
         if (config.unverifiedRoleId && member.roles.cache.has(config.unverifiedRoleId)) {
-          // They still have unverified role, so skip
+          console.log(`[DEBUG] Member ${member.id} has unverified role, skipping ephemeral channel creation`);
           return;
         }
-
-        // If there's an old ephemeral channel for this user, delete it first
+        
+        // Remove any existing ephemeral channel for this user
         for (const [channelId, session] of onetapSessions.entries()) {
           if (session.owner === member.id) {
             const oldChan = guild.channels.cache.get(channelId);
             if (oldChan) {
+              console.log(`[DEBUG] Deleting old ephemeral channel ${oldChan.id} for member ${member.id}`);
               await oldChan.delete().catch(() => {});
             }
             onetapSessions.delete(channelId);
           }
         }
-
-        // Create the ephemeral channel
+        
+        // Create the ephemeral voice channel
         const ephemeralChannel = await guild.channels.create({
           name: `${member.displayName}'s Room`,
-          type: 2, // 2 = voice
+          type: 2, // Voice channel
           permissionOverwrites: [
             {
-              // Everyone can see this channel unless we hide it,
-              // but we can let them connect too if you want
               id: guild.id,
               allow: [PermissionsBitField.Flags.Connect, PermissionsBitField.Flags.ViewChannel]
             },
             {
-              // Deny unverified from connecting
-              id: config.unverifiedRoleId || '0', // fallback to bogus ID if not set
+              id: config.unverifiedRoleId || '0',
               deny: [PermissionsBitField.Flags.Connect]
             },
             {
-              // Owner can connect, speak, stream, attach files, etc.
               id: member.id,
               allow: [
                 PermissionsBitField.Flags.Connect,
@@ -840,15 +841,18 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
             }
           ]
         });
-
-        // Store session info
+        
+        console.log(`[DEBUG] Created ephemeral channel ${ephemeralChannel.id} for member ${member.id}`);
+        
+        // Store the session info
         onetapSessions.set(ephemeralChannel.id, {
           owner: member.id,
           rejectedUsers: []
         });
-
-        // Move user into the ephemeral channel
+        
+        // Move the member to the new ephemeral channel
         await member.voice.setChannel(ephemeralChannel);
+        console.log(`[DEBUG] Moved member ${member.id} to ephemeral channel ${ephemeralChannel.id}`);
       }
     }
   } catch (err) {

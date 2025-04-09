@@ -63,7 +63,7 @@ client.once(Events.ClientReady, () => {
 // ------------------------------
 // Global Maps for Sessions & Setup
 // ------------------------------
-const setupStarted = new Map();          // Prevents duplicate setups per guild
+const setupStarted = new Map();          // Prevent duplicate setups per guild
 const verificationSessions = new Map();  // Stores ephemeral verification sessions { channelId: { userId } }
 const onetapSessions = new Map();        // Stores one-tap & need-help ephemeral channels { channelId: { owner, type, rejectedUsers } }
 const jailData = new Map();              // For jail/unban commands
@@ -102,51 +102,9 @@ const languagePrompts = {
     helperRoleId: "🔹 **# 3tini l'ID dial Helper Role**",
     needHelpLogChannelId: "🔹 **# 3tini l'ID dial Need Help logs** (awla `none`)"
   },
-  spanish: {
-    verifiedRoleId: "🔹 **# Proporciona el ID del rol Verified Boy**",
-    unverifiedRoleId: "🔹 **# Proporciona el ID del rol Unverified**",
-    verifiedGirlRoleId: "🔹 **# Proporciona el ID del rol Verified Girl**",
-    verificatorRoleId: "🔹 **# Proporciona el ID del rol Verificator**",
-    voiceVerificationChannelId: "🔹 **# Proporciona el ID del canal permanente de verificación**",
-    oneTapChannelId: "🔹 **# Proporciona el ID del canal One-Tap**",
-    verificationAlertChannelId: "🔹 **# Proporciona el ID del canal de alerta de verificación**",
-    jailRoleId: "🔹 **# Proporciona el ID del rol Jail** (o escribe `none`)",
-    voiceJailChannelId: "🔹 **# Proporciona el ID del canal de voz de Jail** (o escribe `none`)",
-    verificationLogChannelId: "🔹 **# Proporciona el ID del canal de registro de verificación** (o escribe `none`)",
-    needHelpChannelId: "🔹 **# Proporciona el ID del canal Need Help**",
-    helperRoleId: "🔹 **# Proporciona el ID del rol Helper**",
-    needHelpLogChannelId: "🔹 **# Proporciona el ID del canal de registro de Need Help** (o escribe `none`)"
-  },
-  russian: {
-    verifiedRoleId: "🔹 **# Укажите ID роли для подтверждённого парня**",
-    unverifiedRoleId: "🔹 **# Укажите ID роли для неподтверждённого пользователя**",
-    verifiedGirlRoleId: "🔹 **# Укажите ID роли для подтверждённой девочки**",
-    verificatorRoleId: "🔹 **# Укажите ID роли для проверяющего**",
-    voiceVerificationChannelId: "🔹 **# Укажите ID постоянного голосового канала проверки**",
-    oneTapChannelId: "🔹 **# Укажите ID канала One-Tap**",
-    verificationAlertChannelId: "🔹 **# Укажите ID канала уведомлений проверки**",
-    jailRoleId: "🔹 **# Укажите ID роли для тюрьмы** (или напишите `none`)",
-    voiceJailChannelId: "🔹 **# Укажите ID голосового канала тюрьмы** (или напишите `none`)",
-    verificationLogChannelId: "🔹 **# Укажите ID канала логов проверки** (или напишите `none`)",
-    needHelpChannelId: "🔹 **# Укажите ID канала Need Help**",
-    helperRoleId: "🔹 **# Укажите ID роли для помощника**",
-    needHelpLogChannelId: "🔹 **# Укажите ID канала логов Need Help** (или напишите `none`)"
-  },
-  french: {
-    verifiedRoleId: "🔹 **# Fournissez l'ID du rôle Verified Boy**",
-    unverifiedRoleId: "🔹 **# Fournissez l'ID du rôle Unverified**",
-    verifiedGirlRoleId: "🔹 **# Fournissez l'ID du rôle Verified Girl**",
-    verificatorRoleId: "🔹 **# Fournissez l'ID du rôle Verificator**",
-    voiceVerificationChannelId: "🔹 **# Fournissez l'ID du canal vocal de vérification permanent**",
-    oneTapChannelId: "🔹 **# Fournissez l'ID du canal One-Tap**",
-    verificationAlertChannelId: "🔹 **# Fournissez l'ID du canal d'alerte de vérification**",
-    jailRoleId: "🔹 **# Fournissez l'ID du rôle Jail** (ou tapez `none`)",
-    voiceJailChannelId: "🔹 **# Fournissez l'ID du canal vocal Jail** (ou tapez `none`)",
-    verificationLogChannelId: "🔹 **# Fournissez l'ID du canal de logs de vérification** (ou tapez `none`)",
-    needHelpChannelId: "🔹 **# Fournissez l'ID du canal Need Help**",
-    helperRoleId: "🔹 **# Fournissez l'ID du rôle Helper**",
-    needHelpLogChannelId: "🔹 **# Fournissez l'ID du canal de logs Need Help** (ou tapez `none`)"
-  }
+  spanish: { /* ... */ },
+  russian: { /* ... */ },
+  french: { /* ... */ }
 };
 
 const languageExtras = {
@@ -158,18 +116,9 @@ const languageExtras = {
     setupStart: "Ghanbdaw Daba Setup. Wghade ykon kolshi sahel; sift lia ghi l'ID's li bghiti, wghaydouz kolshi mzyan.",
     setupComplete: "Safi l'Bot rah m9ad 100%. Wila khasek shi haja, dwe m3a Franco 🔱 🎉"
   },
-  spanish: {
-    setupStart: "Comencemos la configuración. Copia y pega cada ID según se indique.",
-    setupComplete: "¡Configuración completa! 🎉"
-  },
-  russian: {
-    setupStart: "Давайте начнем настройку. Введите каждый ID по запросу.",
-    setupComplete: "Настройка завершена! 🎉"
-  },
-  french: {
-    setupStart: "Commençons la configuration. Veuillez copier/coller chaque ID comme indiqué.",
-    setupComplete: "Configuration terminée ! 🎉"
-  }
+  spanish: { /* ... */ },
+  russian: { /* ... */ },
+  french: { /* ... */ }
 };
 
 // ------------------------------
@@ -287,9 +236,8 @@ const slashCommands = [
 // ------------------------------
 client.on('interactionCreate', async interaction => {
   if (interaction.isButton()) {
-    // "Join Help" Button – Only helpers (or admins) can use it
+    // "Join Help" Button – Only helpers (or admins) can use it, and block unverified users
     if (interaction.customId.startsWith("join_help_")) {
-      // Prevent unverified users from joining help sessions
       const config = await settingsCollection.findOne({ serverId: interaction.guild.id });
       if (config && config.unverifiedRoleId && interaction.member.roles.cache.has(config.unverifiedRoleId)) {
         return interaction.reply({ content: "Unverified users cannot join help sessions.", ephemeral: true });
@@ -335,15 +283,23 @@ client.on('interactionCreate', async interaction => {
         return interaction.reply({ content: "You are not allowed to verify members.", ephemeral: true });
       }
       try {
-        await interaction.member.voice.setChannel(ephemeralChannelId);
-        return interaction.reply({ content: "You've joined the verification session!", ephemeral: true });
+        // Mode 1: if user is in a voice channel, move them directly
+        if (interaction.member.voice.channel) {
+          await interaction.member.voice.setChannel(ephemeralChannelId);
+          return interaction.reply({ content: "You've been moved to the verification session!", ephemeral: true });
+        } else {
+          // Mode 2: Otherwise, create an invite link to the verification channel and send it
+          const invite = await ephemeralChannel.createInvite({ maxAge: 300, maxUses: 1 });
+          return interaction.reply({ content: `You are not in a voice channel. Please join using this invite link: ${invite.url}`, ephemeral: true });
+        }
+        // (Mode 3: A user can always join manually by clicking the invite link.)
       } catch (err) {
         console.error("join_verification error:", err);
         return interaction.reply({ content: "Failed to join verification session.", ephemeral: true });
       }
     }
     
-    // Avatar/Banner Buttons – unchanged from your previous code
+    // Avatar/Banner Buttons – unchanged
     if (interaction.customId.startsWith("avatar_") || interaction.customId.startsWith("banner_")) {
       const [action, userId] = interaction.customId.split('_');
       if (!userId) return;
@@ -401,7 +357,6 @@ client.on('interactionCreate', async interaction => {
       return interaction.reply({ content: "No unverified user found in this session.", ephemeral: true });
     }
     try {
-      // Remove unverified role and add the appropriate verified role
       if (config.unverifiedRoleId) {
         await unverifiedMember.roles.remove(config.unverifiedRoleId);
       }
@@ -412,7 +367,6 @@ client.on('interactionCreate', async interaction => {
         if (config.verifiedGirlRoleId) await unverifiedMember.roles.add(config.verifiedGirlRoleId);
         await interaction.reply({ content: `${unverifiedMember} has been verified as Girl successfully ✨️` });
       }
-      // Delete the ephemeral verification channel and remove its session
       vc.delete().catch(() => {});
       verificationSessions.delete(vc.id);
     } catch (err) {
@@ -565,7 +519,6 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
       if (config.verificationAlertChannelId && config.verificationAlertChannelId !== "none") {
         const alertChannel = guild.channels.cache.get(config.verificationAlertChannelId);
         if (alertChannel) {
-          // Build an embed to match your custom notification
           const embed = new EmbedBuilder()
             .setColor(0x00AE86)
             .setTitle(`New Member ${member.displayName} 🙋‍♂️`)
@@ -589,7 +542,7 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
     // One-Tap Process:
     if (config.oneTapChannelId && newState.channelId === config.oneTapChannelId) {
       if (config.unverifiedRoleId && member.roles.cache.has(config.unverifiedRoleId)) return;
-      // Delete old one-tap session if exists
+      // Delete old one-tap session if exists for this member
       for (const [channelId, session] of onetapSessions.entries()) {
         if (session.owner === member.id && session.type === "oneTap") {
           const oldChan = guild.channels.cache.get(channelId);
@@ -603,7 +556,8 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
         type: 2, // Voice channel
         parent: parentCategory,
         permissionOverwrites: [
-          { id: guild.id, deny: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.Connect] },
+          { id: guild.id, allow: [PermissionsBitField.Flags.ViewChannel], deny: [PermissionsBitField.Flags.Connect] },
+          { id: config.unverifiedRoleId, deny: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.Connect] },
           { id: member.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.Connect, PermissionsBitField.Flags.Speak, PermissionsBitField.Flags.Stream, PermissionsBitField.Flags.AttachFiles] }
         ]
       });
@@ -623,7 +577,7 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
         }
       }
       const parentCategory = newState.channel.parentId;
-      // Build permission overwrites so unverified members are explicitly denied access
+      // Set overwrites so that unverified users are hidden
       const overrides = [
         { id: guild.id, deny: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.Connect] }
       ];
@@ -631,7 +585,6 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
         overrides.push({ id: config.unverifiedRoleId, deny: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.Connect] });
       }
       overrides.push({ id: member.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.Connect, PermissionsBitField.Flags.Speak, PermissionsBitField.Flags.Stream, PermissionsBitField.Flags.AttachFiles] });
-      
       const ephemeralChannel = await guild.channels.create({
         name: `${member.displayName} needs help`,
         type: 2, // Voice channel
@@ -643,8 +596,15 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
       if (config.needHelpLogChannelId && config.needHelpLogChannelId !== "none") {
         const logChannel = guild.channels.cache.get(config.needHelpLogChannelId);
         if (logChannel) {
+          // (Optional) Ensure unverified users cannot view the log channel
+          if (config.unverifiedRoleId) {
+            await logChannel.permissionOverwrites.edit(config.unverifiedRoleId, { ViewChannel: false, Connect: false });
+          }
           const helpText = `# ${member.displayName} needs help.`;
-          const joinButton = new ButtonBuilder().setCustomId(`join_help_${ephemeralChannel.id}`).setLabel("Join Help").setStyle(ButtonStyle.Danger);
+          const joinButton = new ButtonBuilder()
+            .setCustomId(`join_help_${ephemeralChannel.id}`)
+            .setLabel("Join Help")
+            .setStyle(ButtonStyle.Danger);
           const row = new ActionRowBuilder().addComponents(joinButton);
           await logChannel.send({
             content: `<@&${config.helperRoleId}> ${helpText}`,

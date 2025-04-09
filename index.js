@@ -88,19 +88,19 @@ const languagePrompts = {
     needHelpLogChannelId: "🔹 **# Provide the Need Help Log Channel ID** (or type `none`)"
   },
   darija: {
-    verifiedRoleId: "🔹 **# عطيلي الرمز ديال Verified Boy Role**",
-    unverifiedRoleId: "🔹 **# عطيلي الرمز ديال Unverified Role**",
-    verifiedGirlRoleId: "🔹 **# عطيلي الرمز ديال Verified Girl Role**",
-    verificatorRoleId: "🔹 **# عطيلي الرمز ديال Verificator Role**",
-    voiceVerificationChannelId: "🔹 **# عطيلي الرمز ديال قناة التحقق الدائمة**",
-    oneTapChannelId: "🔹 **# عطيلي الرمز ديال قناة One-Tap**",
-    verificationAlertChannelId: "🔹 **# عطيلي الرمز ديال قناة تنبيه التحقق**",
-    jailRoleId: "🔹 **# عطيلي الرمز ديال Jail Role** (أو كتب `none`)",
-    voiceJailChannelId: "🔹 **# عطيلي الرمز ديال قناة Jail الصوتية** (أو كتب `none`)",
-    verificationLogChannelId: "🔹 **# عطيلي الرمز ديال قناة سجل التحقق** (أو كتب `none`)",
-    needHelpChannelId: "🔹 **# عطيلي الرمز ديال قناة Need Help**",
-    helperRoleId: "🔹 **# عطيلي الرمز ديال Helper Role**",
-    needHelpLogChannelId: "🔹 **# عطيلي الرمز ديال قناة سجل Need Help** (أو كتب `none`)"
+    verifiedRoleId: "🔹 **# 3tini l'ID dial Verified Boy Role**",
+    unverifiedRoleId: "🔹 **# 3tini l'ID dial Unverified Role**",
+    verifiedGirlRoleId: "🔹 **# 3tini l'ID dial Verified Girl Role**",
+    verificatorRoleId: "🔹 **# 3tini l'ID dial Verificator Role**",
+    voiceVerificationChannelId: "🔹 **# Daba 3tini l'ID dial Join Verification** (fen bnadem taytverifa)",
+    oneTapChannelId: "🔹 **# 3tini daba l'ID dial One-Tap**",
+    verificationAlertChannelId: "🔹 **# 3tini daba l'ID dial Verification Alerts**",
+    jailRoleId: "🔹 **# 3tini l'ID dial Jailed Role** (awla la ma3endeksh kteb `none`)",
+    voiceJailChannelId: "🔹 **# Ara m3ak l'ID dial Jaled voice channel** (awla la ma3endeksh kteb `none`)",
+    verificationLogChannelId: "🔹 **# 3tini l'ID dial Verification logs** (awla la ma3endeksh kteb `none`)",
+    needHelpChannelId: "🔹 **# 3tini l'ID dial Need Help channel**",
+    helperRoleId: "🔹 **# 3tini l'ID dial Helper Role**",
+    needHelpLogChannelId: "🔹 **# 3tini l'ID dial Need Help logs** (awla la ma3endeksh kteb `none`)"
   },
   spanish: {
     verifiedRoleId: "🔹 **# Proporciona el ID del rol Verified Boy**",
@@ -155,8 +155,8 @@ const languageExtras = {
     setupComplete: "Setup complete! 🎉"
   },
   darija: {
-    setupStart: "يلا نبداو الإعداد. نسخ واللصق كل ID كيما طلبت.",
-    setupComplete: "الإعداد تكمل! 🎉"
+    setupStart: "Ghanbdaw Daba Setup. Wghade ykon kolshi sahel sift lia ghi ID's wghaydouz kolshi mzn",
+    setupComplete: "Safi l'Bot rah m9ad 100%. wila khasek shi haja dwe m3a  Franco 🔱 🎉"
   },
   spanish: {
     setupStart: "Comencemos la configuración. Copia y pega cada ID según se indique.",

@@ -1,4 +1,4 @@
-// index.js
+ // index.js
 // Franco's Armada Bot – Complete Code with Setup, Multi-Language Configuration,
 // Verification (/boy and /girl), One-Tap, Need-Help, /aji and Notifications
 
@@ -64,7 +64,7 @@ client.once(Events.ClientReady, () => {
 // Global Maps for Sessions & Setup
 // ------------------------------
 const setupStarted = new Map();          // Prevent duplicate setups per guild
-const verificationSessions = new Map();  // Stores ephemeral verification sessions { channelId: { userId } }
+const verificationSessions = new Map();  // Stores ephemeral verification sessions { channelId: { userId, verified? } }
 const onetapSessions = new Map();        // Stores one-tap & need-help ephemeral channels { channelId: { owner, type, rejectedUsers } }
 const jailData = new Map();              // For jail/unban commands
 
@@ -334,7 +334,7 @@ client.on('interactionCreate', async interaction => {
         return interaction.reply({ content: "You are not allowed to verify members.", ephemeral: true });
       }
       try {
-        // Mode 1: if user is in a voice channel, move them directly
+        // Mode 1: if user is already in a voice channel, move them directly
         if (interaction.member.voice.channel) {
           await interaction.member.voice.setChannel(ephemeralChannelId);
           return interaction.reply({ content: "You've been moved to the verification session!", ephemeral: false });
@@ -349,7 +349,7 @@ client.on('interactionCreate', async interaction => {
       }
     }
     
-    // Avatar/Banner Buttons – unchanged from previous implementation
+    // Avatar/Banner Buttons – unchanged
     if (interaction.customId.startsWith("avatar_") || interaction.customId.startsWith("banner_")) {
       const [action, userId] = interaction.customId.split('_');
       if (!userId) return;
@@ -394,7 +394,7 @@ client.on('interactionCreate', async interaction => {
     return;
   }
   
-  // Verification Commands: /boy and /girl – only for verificators (or admins) in a verification session
+  // Verification Commands: /boy and /girl – only for verificators (or admins)
   if (commandName === "boy" || commandName === "girl") {
     if (!interaction.member.roles.cache.has(config.verificatorRoleId) &&
         !interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
@@ -423,8 +423,8 @@ client.on('interactionCreate', async interaction => {
         if (config.verifiedGirlRoleId) await unverifiedMember.roles.add(config.verifiedGirlRoleId);
         await interaction.reply({ content: `${unverifiedMember} has been verified as Girl successfully ✨️`, ephemeral: false });
       }
-      vc.delete().catch(() => {});
-      verificationSessions.delete(vc.id);
+      // Mark the verification session as verified instead of deleting immediately
+      verificationSessions.set(vc.id, { userId: sessionData.userId, verified: true });
     } catch (err) {
       console.error("Verification error:", err);
       return interaction.reply({ content: "Verification failed. Check my permissions or role hierarchy.", ephemeral: true });
@@ -451,7 +451,7 @@ client.on('interactionCreate', async interaction => {
     }
   }
   
-  // Session Commands (One-Tap Commands) – Return responses as fancy embeds (non-ephemeral)
+  // Session Commands (One-Tap Commands) – respond via fancy embed (non-ephemeral)
   const sessionCommands = ["claim", "mute", "unmute", "lock", "unlock", "limit", "reject", "perm", "hide", "unhide", "transfer", "name", "status"];
   if (sessionCommands.includes(commandName)) {
     let responseText = "";
@@ -659,7 +659,7 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
     // One-Tap Process:
     if (config.oneTapChannelId && newState.channelId === config.oneTapChannelId) {
       if (config.unverifiedRoleId && member.roles.cache.has(config.unverifiedRoleId)) return;
-      // Delete old one-tap session if exists for this member
+      // Delete any old one-tap session for this member
       for (const [channelId, session] of onetapSessions.entries()) {
         if (session.owner === member.id && session.type === "oneTap") {
           const oldChan = guild.channels.cache.get(channelId);
@@ -694,7 +694,6 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
         }
       }
       const parentCategory = newState.channel.parentId;
-      // Permission overwrites: deny view/connect for unverified users
       const overrides = [
         { id: guild.id, deny: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.Connect] }
       ];
@@ -714,7 +713,6 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
       if (config.needHelpLogChannelId && config.needHelpLogChannelId !== "none") {
         const logChannel = guild.channels.cache.get(config.needHelpLogChannelId);
         if (logChannel) {
-          // Ensure unverified users cannot view the log channel (if not already set)
           if (config.unverifiedRoleId) {
             await logChannel.permissionOverwrites.edit(config.unverifiedRoleId, { ViewChannel: false, Connect: false });
           }
@@ -732,6 +730,32 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
         }
       }
     }
+    
+    // *** NEW VERIFICATION SESSION HANDLING ***
+    // Check for any verification channels that have been marked as verified
+    // and have only one member left (the verified user). Then move them to a new one-tap channel.
+    for (const [channelId, session] of verificationSessions.entries()) {
+      const verifChannel = guild.channels.cache.get(channelId);
+      if (verifChannel && session.verified && verifChannel.members.size === 1) {
+        const remainingMember = verifChannel.members.first();
+        const parentCategory = verifChannel.parentId;
+        const oneTapChannel = await guild.channels.create({
+          name: `${remainingMember.displayName}'s Room`,
+          type: 2,
+          parent: parentCategory,
+          permissionOverwrites: [
+            { id: guild.id, allow: [PermissionsBitField.Flags.ViewChannel], deny: [PermissionsBitField.Flags.Connect] },
+            { id: config.unverifiedRoleId, deny: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.Connect] },
+            { id: remainingMember.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.Connect, PermissionsBitField.Flags.Speak, PermissionsBitField.Flags.Stream, PermissionsBitField.Flags.AttachFiles] }
+          ]
+        });
+        onetapSessions.set(oneTapChannel.id, { owner: remainingMember.id, type: "oneTap", rejectedUsers: [] });
+        await remainingMember.voice.setChannel(oneTapChannel);
+        verifChannel.delete().catch(() => {});
+        verificationSessions.delete(channelId);
+      }
+    }
+    
   } catch (err) {
     console.error("voiceStateUpdate error:", err);
   }
@@ -769,3 +793,4 @@ setInterval(async () => {
 // Client Login
 // ------------------------------
 client.login(process.env.DISCORD_TOKEN);
+

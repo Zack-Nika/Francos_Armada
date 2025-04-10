@@ -5,8 +5,11 @@
 //
 // THIS VERSION FIXES THE JAIL SYSTEM, UPDATES THE NEED-HELP NOTIFICATIONS,
 // ADDS /setwelcome AND /showwelcome FUNCTIONALITY, REMOVES THE /setprefix COMMAND,
-// ADDS CUSTOM NEED-HELP EMOJIS, AND FIXES TEMPORARY VOICE CHANNEL CREATION
-// (using ChannelType.GuildVoice instead of hard-coded type 2).
+// AND MAKES THE FOLLOWING CHANGES:
+//  1. Ephemeral voice channels now include an extra permission overwrite to hide them from the jailed role.
+//  2. When joining a verification session via invite (if not in voice), the invite is sent as plain text.
+//  3. New members receive the configured welcome message via DM.
+//
 
 require('dotenv').config();
 const {
@@ -371,11 +374,8 @@ client.on('interactionCreate', async interaction => {
           setTimeout(() => replyMsg.delete().catch(() => {}), 10000);
         } else {
           const invite = await verifChannel.createInvite({ maxAge: 300, maxUses: 1 });
-          const embed = new EmbedBuilder()
-            .setColor(0xFFEB3B)
-            .setDescription(`✅ ${interaction.member}, join with this link: ${invite.url}`);
-          const linkMsg = await interaction.reply({ embeds: [embed], ephemeral: false });
-          setTimeout(() => linkMsg.delete().catch(()=>{}), 10000);
+          // Send as plain text instead of an embed.
+          return interaction.reply({ content: `✅ ${interaction.member}, join with this link: ${invite.url}`, ephemeral: false });
         }
       } catch (err) {
         console.error("join_verification error:", err);
@@ -893,11 +893,19 @@ client.on(Events.GuildCreate, async guild => {
 });
 
 // ------------------------------
-// Auto-assign Unverified Role on Member Join
+// Auto-assign Unverified Role on Member Join & Send Welcome Message
 // ------------------------------
 client.on(Events.GuildMemberAdd, async member => {
   try {
     const config = await settingsCollection.findOne({ serverId: member.guild.id });
+    // Send welcome message DM if set.
+    if (config && config.welcomeMessage) {
+      try {
+        await member.send(config.welcomeMessage);
+      } catch (dmErr) {
+        console.log("Could not DM the welcome message to the member.");
+      }
+    }
     if (!config) return;
     if (config.unverifiedRoleId) {
       const role = member.guild.roles.cache.get(config.unverifiedRoleId);
@@ -919,6 +927,12 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
     const config = await settingsCollection.findOne({ serverId: guild.id });
     if (!config) return;
     
+    // Prepare a jail role overwrite if set, to hide ephemeral channels from jailed users.
+    let jailOverwrite = [];
+    if (config.jailRoleId && config.jailRoleId !== "none") {
+      jailOverwrite.push({ id: config.jailRoleId, deny: [PermissionsBitField.Flags.ViewChannel] });
+    }
+    
     // Verification Entry: user enters the permanent verification channel.
     if (config.voiceVerificationChannelId && newState.channelId === config.voiceVerificationChannelId) {
       if (config.unverifiedRoleId && !member.roles.cache.has(config.unverifiedRoleId)) return;
@@ -930,7 +944,8 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
         userLimit: 2,
         permissionOverwrites: [
           { id: guild.id, allow: [PermissionsBitField.Flags.Connect, PermissionsBitField.Flags.ViewChannel] },
-          { id: member.id, allow: [PermissionsBitField.Flags.Connect, PermissionsBitField.Flags.Speak, PermissionsBitField.Flags.AttachFiles] }
+          { id: member.id, allow: [PermissionsBitField.Flags.Connect, PermissionsBitField.Flags.Speak, PermissionsBitField.Flags.AttachFiles] },
+          ...jailOverwrite
         ]
       });
       verificationSessions.set(ephemeralChannel.id, { userId: member.id });
@@ -971,7 +986,8 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
         permissionOverwrites: [
           { id: guild.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.Connect] },
           { id: config.unverifiedRoleId, deny: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.Connect] },
-          { id: member.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.Connect, PermissionsBitField.Flags.Speak, PermissionsBitField.Flags.Stream, PermissionsBitField.Flags.AttachFiles] }
+          { id: member.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.Connect, PermissionsBitField.Flags.Speak, PermissionsBitField.Flags.Stream, PermissionsBitField.Flags.AttachFiles] },
+          ...jailOverwrite
         ]
       });
       onetapSessions.set(ephemeralChannel.id, {
@@ -1002,6 +1018,8 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
         overrides.push({ id: config.unverifiedRoleId, deny: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.Connect] });
       }
       overrides.push({ id: member.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.Connect, PermissionsBitField.Flags.Speak, PermissionsBitField.Flags.Stream, PermissionsBitField.Flags.AttachFiles] });
+      // Include jail role overwrite here too.
+      overrides.push(...jailOverwrite);
       const ephemeralChannel = await guild.channels.create({
         name: `${member.displayName} needs help`,
         type: ChannelType.GuildVoice,
@@ -1066,7 +1084,8 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
             permissionOverwrites: [
               { id: guild.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.Connect] },
               { id: config.unverifiedRoleId, deny: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.Connect] },
-              { id: remainingMember.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.Connect, PermissionsBitField.Flags.Speak, PermissionsBitField.Flags.Stream, PermissionsBitField.Flags.AttachFiles] }
+              { id: remainingMember.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.Connect, PermissionsBitField.Flags.Speak, PermissionsBitField.Flags.Stream, PermissionsBitField.Flags.AttachFiles] },
+              ...jailOverwrite
             ]
           });
           onetapSessions.set(newTap.id, {
@@ -1189,11 +1208,19 @@ client.on(Events.GuildCreate, async guild => {
 });
 
 // ------------------------------
-// Auto-assign Unverified Role on Member Join
+// Auto-assign Unverified Role on Member Join & Send Welcome Message
 // ------------------------------
 client.on(Events.GuildMemberAdd, async member => {
   try {
     const config = await settingsCollection.findOne({ serverId: member.guild.id });
+    // Send welcome message DM if set.
+    if (config && config.welcomeMessage) {
+      try {
+        await member.send(config.welcomeMessage);
+      } catch (dmErr) {
+        console.log("Could not DM the welcome message to the member.");
+      }
+    }
     if (!config) return;
     if (config.unverifiedRoleId) {
       const role = member.guild.roles.cache.get(config.unverifiedRoleId);

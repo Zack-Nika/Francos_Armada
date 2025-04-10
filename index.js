@@ -166,7 +166,7 @@ const languageExtras = {
   },
   darija: {
     setupStart: "Ghanbdaw Daba Setup. Wghade ykon kolshi sahel, sift lia ghi l'ID's li ghansewlek 3lihom osafi, 7de la ykono ghalten se no l'bot maghykhdemsh ❌️.",
-    setupComplete: "Safi l'Bot rah m9ad 100%. Wila khasek shi haja, twasel ma3a Franco 🔱 / Username: @im_franco 🎉"
+    setupComplete: "Safi l'Bot rah m9ad 100%. Wila khasek shi haja, twasel ma3a Franco 🔱 / Username: @im_franco 🎉."
   },
   spanish: {
     setupStart: "Comencemos la configuración. Por favor, copia y pega cada ID según se te solicite.",

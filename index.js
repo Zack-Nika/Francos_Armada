@@ -2,6 +2,18 @@
 // Franco's Armada Bot – Complete Code with Setup, Multi-Language Configuration,
 // Verification (/boy and /girl), One-Tap, Need-Help, Profile Viewer (via "R" message),
 // /aji and Notifications
+//
+// THIS VERSION FIXES THE JAIL SYSTEM AND UPDATES THE NEED-HELP NOTIFICATIONS
+// AS REQUESTED:
+//
+// • Slash /jail now properly processes a user ID and reason: It removes all of the target's roles,
+//   assigns the jail role if provided, optionally moves the user to a designated voice jail channel,
+//   and logs the jail info.
+// • The need-help notification embed text has been reduced to one line.
+// • The join help button now checks if the helper is in a voice channel. If not, it creates an invite
+//   and sends that as plain text instead of an embed.
+// • Everything else is retained from the previous stable code.
+//
 
 require('dotenv').config();
 const {
@@ -62,10 +74,8 @@ client.once(Events.ClientReady, () => {
 // Global Maps for Sessions & Setup
 // ------------------------------
 const setupStarted = new Map(); // Prevent duplicate setups per guild
-// verificationSessions: { channelId: { userId, verified?: boolean } }
-const verificationSessions = new Map();
-// onetapSessions: { channelId: { owner, type, rejectedUsers, baseName, status } }
-const onetapSessions = new Map();
+const verificationSessions = new Map(); // { channelId: { userId, verified?: boolean } }
+const onetapSessions = new Map(); // { channelId: { owner, type, rejectedUsers, baseName, status } }
 const jailData = new Map(); // For jail/unban commands
 
 // ------------------------------
@@ -320,6 +330,11 @@ client.on('interactionCreate', async interaction => {
       }
       try {
         const ch = interaction.guild.channels.cache.get(channelId);
+        // If helper is not in any voice channel, create an invite
+        if (!interaction.member.voice.channel) {
+          const invite = await ch.createInvite({ maxAge: 300, maxUses: 1 });
+          return interaction.reply({ content: `Click this link to join: ${invite.url}`, ephemeral: false });
+        }
         if (ch.members.size >= 2) {
           return interaction.reply({ content: "A helper has already joined this session.", ephemeral: true });
         }
@@ -397,7 +412,7 @@ client.on('interactionCreate', async interaction => {
         return interaction.reply({ content: "Error fetching user data.", ephemeral: true });
       }
     }
-    return; // End button interactions.
+    return; // End of button interactions.
   }
   
   if (!interaction.isChatInputCommand()) return;
@@ -407,10 +422,96 @@ client.on('interactionCreate', async interaction => {
   
   const { commandName } = interaction;
   
-  // Global Admin Commands
+  // ----- JAIL SYSTEM COMMANDS (Focus on Fixing Jail) -----
+  if (commandName === "jail") {
+    // Only administrators can use jail.
+    if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+      return interaction.reply({ content: "You are not allowed to use this command.", ephemeral: true });
+    }
+    const targetId = interaction.options.getString("userid");
+    const reason = interaction.options.getString("reason");
+    const targetMember = interaction.guild.members.cache.get(targetId);
+    if (!targetMember) return interaction.reply({ content: "User not found.", ephemeral: true });
+    try {
+      // Optionally remove all roles from target.
+      await targetMember.roles.set([]);
+      // Give jail role if defined.
+      if (config.jailRoleId && config.jailRoleId !== "none") {
+        const jailRole = interaction.guild.roles.cache.get(config.jailRoleId);
+        if (jailRole) await targetMember.roles.add(jailRole);
+      }
+      // If a voice jail channel is provided and target is in voice, move them there.
+      if (config.voiceJailChannelId && config.voiceJailChannelId !== "none") {
+        const jailChannel = interaction.guild.channels.cache.get(config.voiceJailChannelId);
+        if (jailChannel && targetMember.voice.channel) {
+          await targetMember.voice.setChannel(jailChannel);
+        }
+      }
+      // Store jail info.
+      jailData.set(targetMember.id, { reason, jailer: interaction.user.id, time: Date.now() });
+      const embed = new EmbedBuilder()
+        .setColor(0xFFEB3B)
+        .setDescription(`✅ ${interaction.member}, ${targetMember} has been jailed.\nReason: ${reason}`);
+      return interaction.reply({ embeds: [embed], ephemeral: false });
+    } catch (err) {
+      console.error("Jail error:", err);
+      return interaction.reply({ content: "Failed to jail the user.", ephemeral: true });
+    }
+  }
+  
+  if (commandName === "jinfo") {
+    if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+      return interaction.reply({ content: "You are not allowed to use this command.", ephemeral: true });
+    }
+    const targetId = interaction.options.getString("userid");
+    const info = jailData.get(targetId);
+    if (!info) return interaction.reply({ content: "No jail info found for that user.", ephemeral: true });
+    const embed = new EmbedBuilder()
+      .setColor(0xFFEB3B)
+      .setDescription(`Jail Info for <@${targetId}>:\nJailed by: <@${info.jailer}>\nReason: ${info.reason}\nTime: ${new Date(info.time).toLocaleString()}`);
+    return interaction.reply({ embeds: [embed], ephemeral: false });
+  }
+  
+  if (commandName === "unban") {
+    if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+      return interaction.reply({ content: "You are not allowed to use this command.", ephemeral: true });
+    }
+    const targetId = interaction.options.getString("userid");
+    const targetMember = interaction.guild.members.cache.get(targetId);
+    if (!targetMember) return interaction.reply({ content: "User not found.", ephemeral: true });
+    try {
+      // Remove jail role and restore roles as necessary.
+      if (config.jailRoleId && config.jailRoleId !== "none") {
+        await targetMember.roles.remove(config.jailRoleId);
+      }
+      jailData.delete(targetId);
+      const embed = new EmbedBuilder()
+        .setColor(0xFFEB3B)
+        .setDescription(`✅ ${interaction.member}, <@${targetId}> has been unjailed.`);
+      return interaction.reply({ embeds: [embed], ephemeral: false });
+    } catch (err) {
+      console.error("Unjail error:", err);
+      return interaction.reply({ content: "Failed to unjail the user.", ephemeral: true });
+    }
+  }
+  
+  if (commandName === "binfo") {
+    if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+      return interaction.reply({ content: "You are not allowed to use this command.", ephemeral: true });
+    }
+    const total = jailData.size;
+    const embed = new EmbedBuilder()
+      .setColor(0xFFEB3B)
+      .setDescription(`Total jailed users: ${total}`);
+    return interaction.reply({ embeds: [embed], ephemeral: false });
+  }
+  
+  // ------------------------------
+  // Global Admin Commands (rest)
+  // ------------------------------
   const globalCmds = ["setprefix", "setwelcome", "showwelcome", "jail", "jinfo", "unban", "binfo", "topvrf", "toponline"];
   if (globalCmds.includes(commandName)) {
-    // [Global command logic goes here if needed]
+    // Global command logic if needed.
     return;
   }
   
@@ -455,7 +556,6 @@ client.on('interactionCreate', async interaction => {
           await logsChannel.send({ embeds: [logEmbed] });
         }
       }
-      // Mark the verification session as verified for later moving.
       verificationSessions.set(vc.id, { userId: sessionData.userId, verified: true });
     } catch (err) {
       console.error("Verification error:", err);
@@ -497,7 +597,6 @@ client.on('interactionCreate', async interaction => {
       return interaction.reply({ embeds: [embed], ephemeral: true });
     }
     let session = onetapSessions.get(voiceChannel.id);
-    // /claim: allow claiming if the current owner is not present.
     if (commandName === "claim") {
       if (!voiceChannel.members.has(session.owner)) {
         session.owner = interaction.user.id;
@@ -809,7 +908,6 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
     }
     
     // One-Tap Entry: when a user joins the permanent one-tap channel.
-    // Added a check so that if the user is really joining (i.e. no oldState.channelId or oldState isn't oneTapChannel).
     if (config.oneTapChannelId && newState.channelId === config.oneTapChannelId && (!oldState.channelId || oldState.channelId !== config.oneTapChannelId)) {
       if (config.unverifiedRoleId && member.roles.cache.has(config.unverifiedRoleId)) return;
       const parentCategory = newState.channel.parentId;
@@ -865,13 +963,14 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
           if (config.unverifiedRoleId) {
             await logChannel.permissionOverwrites.edit(config.unverifiedRoleId, { ViewChannel: false, Connect: false });
           }
+          // Use a one-line embed description.
           const embed = new EmbedBuilder()
             .setColor(0xFFEB3B)
-            .setDescription(`# ${member.displayName} needs help.`);
+            .setDescription(`💡 **${member.displayName} needs help!**`);
           const joinButton = new ButtonBuilder()
             .setCustomId(`join_help_${ephemeralChannel.id}`)
-            .setLabel("Join Help")
-            .setStyle(ButtonStyle.Danger);
+            .setLabel("Join Top")
+            .setStyle(ButtonStyle.Success);
           const row = new ActionRowBuilder().addComponents(joinButton);
           const msg = await logChannel.send({
             content: `<@&${config.helperRoleId}>`,
@@ -884,7 +983,7 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
       }
     }
     
-    // NEW: When a verification channel (marked verified) is left with only one member,
+    // When a verification channel (marked verified) is left with only one member,
     // move that member to an open one-tap channel if available; otherwise, create one.
     for (const [channelId, session] of verificationSessions.entries()) {
       const verifChannel = guild.channels.cache.get(channelId);

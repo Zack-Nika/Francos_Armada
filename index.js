@@ -5,11 +5,8 @@
 //
 // THIS VERSION FIXES THE JAIL SYSTEM, UPDATES THE NEED-HELP NOTIFICATIONS,
 // ADDS /setwelcome AND /showwelcome FUNCTIONALITY, REMOVES THE /setprefix COMMAND,
-// AND ADDS A CUSTOM NEED-HELP MESSAGE/EMOJIS.
-// 
-// The jail system commands now include: /jail, /unjail, /unban, /jinfo, /binfo.
-// When a user is jailed, they get a DM with the reason, and when unjailed, they receive
-// the unverified role to rejoin verification.
+// ADDS CUSTOM NEED-HELP EMOJIS, AND FIXES TEMPORARY VOICE CHANNEL CREATION
+// (using ChannelType.GuildVoice instead of hard-coded type 2).
 
 require('dotenv').config();
 const {
@@ -17,6 +14,7 @@ const {
   GatewayIntentBits,
   Partials,
   Collection,
+  ChannelType,
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
@@ -161,7 +159,7 @@ const languageExtras = {
     setupComplete: "Setup complete! 🎉"
   },
   darija: {
-    setupStart: "Ghanbdaw Daba Setup. Wghade ykon kolshi sahel, sift lia ghi l'ID's li ghansewlek 3lihom osafi, 7de la ykono ghalten se no l'bot maghykhdemsh ❌️.",
+    setupStart: "Ghanbdaw Daba Setup. Wghade ykon kolshi sahel, sift lia ghi l'ID's li ghansewlek 3lihom osafi, 7de la ykono galten se no l'bot maghykhdemsh ❌️.",
     setupComplete: "Safi l'Bot rah m9ad 100%. Wila khasek shi haja, twasel ma3a Franco 🔱 / Username: @im_franco 🎉."
   },
   spanish: {
@@ -860,7 +858,7 @@ client.on(Events.GuildCreate, async guild => {
     const owner = await guild.fetchOwner();
     const setupChannel = await guild.channels.create({
       name: 'bot-setup',
-      type: 0,
+      type: ChannelType.GuildText,
       topic: 'Configure the bot here. This channel will be deleted after setup.',
       permissionOverwrites: [
         { id: guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
@@ -870,7 +868,303 @@ client.on(Events.GuildCreate, async guild => {
     setupChannel.send(`<@${owner.id}>, welcome! Please choose your preferred language using the buttons below, then type "ready" to begin setup.`);
     await guild.channels.create({
       name: 'bot-config',
-      type: 0,
+      type: ChannelType.GuildText,
+      topic: 'Use slash commands for configuration (e.g., /setwelcome, /jail, etc.)',
+      permissionOverwrites: [
+        { id: guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
+        { id: owner.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] }
+      ]
+    });
+    const englishButton = new ButtonBuilder().setCustomId('lang_english').setLabel('English').setStyle(ButtonStyle.Primary);
+    const darijaButton = new ButtonBuilder().setCustomId('lang_darija').setLabel('Darija').setStyle(ButtonStyle.Primary);
+    const spanishButton = new ButtonBuilder().setCustomId('lang_spanish').setLabel('Spanish').setStyle(ButtonStyle.Primary);
+    const russianButton = new ButtonBuilder().setCustomId('lang_russian').setLabel('Russian').setStyle(ButtonStyle.Primary);
+    const frenchButton = new ButtonBuilder().setCustomId('lang_french').setLabel('French').setStyle(ButtonStyle.Primary);
+    const row = new ActionRowBuilder().addComponents(englishButton, darijaButton, spanishButton, russianButton, frenchButton);
+    const embed = new EmbedBuilder()
+      .setColor(0xFFEB3B)
+      .setTitle("Welcome!")
+      .setDescription("Select your language using the buttons below, then type `ready` to begin setup.")
+      .setTimestamp();
+    setupChannel.send({ embeds: [embed], components: [row] });
+  } catch (e) {
+    console.error("Setup channel error:", e);
+  }
+});
+
+// ------------------------------
+// Auto-assign Unverified Role on Member Join
+// ------------------------------
+client.on(Events.GuildMemberAdd, async member => {
+  try {
+    const config = await settingsCollection.findOne({ serverId: member.guild.id });
+    if (!config) return;
+    if (config.unverifiedRoleId) {
+      const role = member.guild.roles.cache.get(config.unverifiedRoleId);
+      if (role) await member.roles.add(role);
+    }
+  } catch (e) {
+    console.error(e);
+  }
+});
+
+// ------------------------------
+// VoiceStateUpdate Handler – Verification, One-Tap & Need-Help
+// ------------------------------
+client.on('voiceStateUpdate', async (oldState, newState) => {
+  try {
+    console.log(`[DEBUG] voiceStateUpdate: old=${oldState.channelId}, new=${newState.channelId}, member=${newState.member.id}`);
+    const member = newState.member;
+    const guild = newState.guild;
+    const config = await settingsCollection.findOne({ serverId: guild.id });
+    if (!config) return;
+    
+    // Verification Entry: user enters the permanent verification channel.
+    if (config.voiceVerificationChannelId && newState.channelId === config.voiceVerificationChannelId) {
+      if (config.unverifiedRoleId && !member.roles.cache.has(config.unverifiedRoleId)) return;
+      const parentCategory = newState.channel.parentId;
+      const ephemeralChannel = await guild.channels.create({
+        name: `Verify - ${member.displayName}`,
+        type: ChannelType.GuildVoice,
+        parent: parentCategory,
+        userLimit: 2,
+        permissionOverwrites: [
+          { id: guild.id, allow: [PermissionsBitField.Flags.Connect, PermissionsBitField.Flags.ViewChannel] },
+          { id: member.id, allow: [PermissionsBitField.Flags.Connect, PermissionsBitField.Flags.Speak, PermissionsBitField.Flags.AttachFiles] }
+        ]
+      });
+      verificationSessions.set(ephemeralChannel.id, { userId: member.id });
+      await member.voice.setChannel(ephemeralChannel);
+      if (config.verificationAlertChannelId && config.verificationAlertChannelId !== "none") {
+        const alertChannel = guild.channels.cache.get(config.verificationAlertChannelId);
+        if (alertChannel) {
+          const embed = new EmbedBuilder()
+            .setColor(0xFFEB3B)
+            .setTitle(`New Member ${member.displayName} 🙋‍♂️`)
+            .setDescription("Ajew!")
+            .setFooter({ text: "Franco's Armada 🔱 (#verification-alerts)" })
+            .setTimestamp();
+          const joinButton = new ButtonBuilder()
+            .setCustomId(`join_verification_${ephemeralChannel.id}`)
+            .setLabel("Join Verification")
+            .setStyle(ButtonStyle.Success);
+          const row = new ActionRowBuilder().addComponents(joinButton);
+          const msg = await alertChannel.send({
+            embeds: [embed],
+            components: [row],
+            allowedMentions: { roles: [config.verificatorRoleId] }
+          });
+          setTimeout(() => msg.delete().catch(() => {}), 11000);
+        }
+      }
+      return;
+    }
+    
+    // One-Tap Entry: when a user joins the permanent one-tap channel.
+    if (config.oneTapChannelId && newState.channelId === config.oneTapChannelId && (!oldState.channelId || oldState.channelId !== config.oneTapChannelId)) {
+      if (config.unverifiedRoleId && member.roles.cache.has(config.unverifiedRoleId)) return;
+      const parentCategory = newState.channel.parentId;
+      const ephemeralChannel = await guild.channels.create({
+        name: `${member.displayName}'s Room`,
+        type: ChannelType.GuildVoice,
+        parent: parentCategory,
+        permissionOverwrites: [
+          { id: guild.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.Connect] },
+          { id: config.unverifiedRoleId, deny: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.Connect] },
+          { id: member.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.Connect, PermissionsBitField.Flags.Speak, PermissionsBitField.Flags.Stream, PermissionsBitField.Flags.AttachFiles] }
+        ]
+      });
+      onetapSessions.set(ephemeralChannel.id, {
+        owner: member.id,
+        type: "oneTap",
+        rejectedUsers: [],
+        baseName: ephemeralChannel.name,
+        status: ""
+      });
+      await member.voice.setChannel(ephemeralChannel);
+    }
+    
+    // Need-Help Entry: when a user joins the permanent need-help channel.
+    if (config.needHelpChannelId && newState.channelId === config.needHelpChannelId && (!oldState.channelId || oldState.channelId !== config.needHelpChannelId)) {
+      if (config.unverifiedRoleId && member.roles.cache.has(config.unverifiedRoleId)) return;
+      for (const [channelId, session] of onetapSessions.entries()) {
+        if (session.owner === member.id && session.type === "needHelp") {
+          const oldChan = guild.channels.cache.get(channelId);
+          if (oldChan) await oldChan.delete().catch(() => {});
+          onetapSessions.delete(channelId);
+        }
+      }
+      const parentCategory = newState.channel.parentId;
+      const overrides = [
+        { id: guild.id, deny: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.Connect] }
+      ];
+      if (config.unverifiedRoleId) {
+        overrides.push({ id: config.unverifiedRoleId, deny: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.Connect] });
+      }
+      overrides.push({ id: member.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.Connect, PermissionsBitField.Flags.Speak, PermissionsBitField.Flags.Stream, PermissionsBitField.Flags.AttachFiles] });
+      const ephemeralChannel = await guild.channels.create({
+        name: `${member.displayName} needs help`,
+        type: ChannelType.GuildVoice,
+        parent: parentCategory,
+        permissionOverwrites: overrides
+      });
+      onetapSessions.set(ephemeralChannel.id, { owner: member.id, type: "needHelp", rejectedUsers: [] });
+      await member.voice.setChannel(ephemeralChannel);
+      if (config.needHelpLogChannelId && config.needHelpLogChannelId !== "none") {
+        const logChannel = guild.channels.cache.get(config.needHelpLogChannelId);
+        if (logChannel) {
+          if (config.unverifiedRoleId) {
+            await logChannel.permissionOverwrites.edit(config.unverifiedRoleId, { ViewChannel: false, Connect: false });
+          }
+          // Custom need help message with your emojis.
+          const embed = new EmbedBuilder()
+            .setColor(0xFFEB3B)
+            .setDescription(`:sos: **${member.displayName} needs help !**`);
+          const joinButton = new ButtonBuilder()
+            .setCustomId(`join_help_${ephemeralChannel.id}`)
+            .setLabel("Join Help")
+            .setStyle(ButtonStyle.Danger);
+          const row = new ActionRowBuilder().addComponents(joinButton);
+          const msg = await logChannel.send({
+            content: `<@&${config.helperRoleId}>`,
+            embeds: [embed],
+            components: [row],
+            allowedMentions: { roles: [config.helperRoleId] }
+          });
+          setTimeout(() => msg.delete().catch(() => {}), 11000);
+        }
+      }
+    }
+    
+    // When a verification channel (marked verified) is left with only one member,
+    // move that member to an open one-tap channel if available; otherwise, create one.
+    for (const [channelId, session] of verificationSessions.entries()) {
+      const verifChannel = guild.channels.cache.get(channelId);
+      if (!verifChannel) continue;
+      if (!session.verified) continue;
+      if (verifChannel.members.size === 1) {
+        const [remainingMember] = verifChannel.members.values();
+        let foundTap = null;
+        for (const [tapId, tapData] of onetapSessions.entries()) {
+          if (tapData.type === "oneTap") {
+            foundTap = tapId;
+            break;
+          }
+        }
+        if (foundTap) {
+          await remainingMember.voice.setChannel(foundTap).catch(() => {});
+        } else {
+          let oneTapParent = guild.id;
+          const baseOneTapChannel = guild.channels.cache.get(config.oneTapChannelId);
+          if (baseOneTapChannel && baseOneTapChannel.parentId) {
+            oneTapParent = baseOneTapChannel.parentId;
+          }
+          const newTap = await guild.channels.create({
+            name: `${remainingMember.displayName}'s Room`,
+            type: ChannelType.GuildVoice,
+            parent: oneTapParent,
+            permissionOverwrites: [
+              { id: guild.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.Connect] },
+              { id: config.unverifiedRoleId, deny: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.Connect] },
+              { id: remainingMember.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.Connect, PermissionsBitField.Flags.Speak, PermissionsBitField.Flags.Stream, PermissionsBitField.Flags.AttachFiles] }
+            ]
+          });
+          onetapSessions.set(newTap.id, {
+            owner: remainingMember.id,
+            type: "oneTap",
+            rejectedUsers: [],
+            baseName: newTap.name,
+            status: ""
+          });
+          await remainingMember.voice.setChannel(newTap);
+        }
+        await verifChannel.delete().catch(() => {});
+        verificationSessions.delete(channelId);
+      }
+    }
+  } catch (err) {
+    console.error("voiceStateUpdate error:", err);
+  }
+});
+
+// ------------------------------
+// Periodic Cleanup of Ephemeral Channels
+// ------------------------------
+setInterval(async () => {
+  for (const [channelId, session] of onetapSessions.entries()) {
+    const channel = client.channels.cache.get(channelId);
+    if (channel && channel.type === ChannelType.GuildVoice && channel.members.size === 0) {
+      try {
+        await channel.delete();
+      } catch (err) {
+        console.error("Failed deleting ephemeral channel", channelId, err);
+      }
+      onetapSessions.delete(channelId);
+    }
+  }
+  for (const [channelId, session] of verificationSessions.entries()) {
+    const channel = client.channels.cache.get(channelId);
+    if (!channel) { verificationSessions.delete(channelId); continue; }
+    if (channel.type === ChannelType.GuildVoice && channel.members.size === 0) {
+      try {
+        await channel.delete();
+      } catch (err) {
+        console.error("Failed deleting ephemeral verification channel", channelId, err);
+      }
+      verificationSessions.delete(channelId);
+    }
+  }
+}, 2000);
+
+// ------------------------------
+// Setup Handler – "ready" Command in bot-setup Channel
+// ------------------------------
+client.on('messageCreate', async message => {
+  if (message.author.bot) return;
+  if (message.channel.name === 'bot-setup') {
+    let owner;
+    try {
+      owner = await message.guild.fetchOwner();
+    } catch (e) {
+      console.error(e);
+      return;
+    }
+    if (message.author.id !== owner.id) return;
+    if (message.content.trim().toLowerCase() === 'ready') {
+      if (setupStarted.get(message.guild.id)) return;
+      setupStarted.set(message.guild.id, true);
+      try {
+        const config = await settingsCollection.findOne({ serverId: message.guild.id });
+        const lang = (config && config.language) || "english";
+        await runSetup(message.author.id, message.channel, message.guild.id, lang);
+        setTimeout(() => { message.channel.delete().catch(() => {}); }, 5000);
+      } catch (err) {
+        console.error("Setup error:", err);
+      }
+    }
+    return;
+  }
+});
+
+// ------------------------------
+// On Guild Join – Create "bot-setup" & "bot-config" Channels with Language Selection
+// ------------------------------
+client.on(Events.GuildCreate, async guild => {
+  try {
+    const owner = await guild.fetchOwner();
+    const setupChannel = await guild.channels.create({
+      name: 'bot-setup',
+      type: ChannelType.GuildText,
+      topic: 'Configure the bot here. This channel will be deleted after setup.',
+      permissionOverwrites: [
+        { id: guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
+        { id: owner.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] }
+      ]
+    });
+    setupChannel.send(`<@${owner.id}>, welcome! Please choose your preferred language using the buttons below, then type "ready" to begin setup.`);
+    await guild.channels.create({
+      name: 'bot-config',
+      type: ChannelType.GuildText,
       topic: 'Use slash commands for configuration (e.g., /setwelcome, /jail, etc.)',
       permissionOverwrites: [
         { id: guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },

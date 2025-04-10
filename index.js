@@ -700,7 +700,7 @@ client.on('interactionCreate', async interaction => {
       }
       case "hide": {
         await voiceChannel.permissionOverwrites.edit(interaction.guild.id, { ViewChannel: false });
-        responseText = `✅ ${interaction.member} hid the session!`;
+        responseText = `✅ ${interaction.member} hide the session!`;
         break;
       }
       case "unhide": {

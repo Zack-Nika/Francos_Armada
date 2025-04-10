@@ -4,8 +4,12 @@
 // /aji and Notifications
 //
 // THIS VERSION FIXES THE JAIL SYSTEM, UPDATES THE NEED-HELP NOTIFICATIONS,
-// ADDS /setwelcome AND /showwelcome FUNCTIONALITY, AND REMOVES THE /setprefix COMMAND
-// AS REQUESTED.
+// ADDS /setwelcome AND /showwelcome FUNCTIONALITY, REMOVES THE /setprefix COMMAND,
+// AND ADDS A CUSTOM NEED-HELP MESSAGE/EMOJIS.
+// 
+// The jail system commands now include: /jail, /unjail, /unban, /jinfo, /binfo.
+// When a user is jailed, they get a DM with the reason, and when unjailed, they receive
+// the unverified role to rejoin verification.
 
 require('dotenv').config();
 const {
@@ -99,7 +103,7 @@ const languagePrompts = {
     verificationAlertChannelId: "🔹 **3tini daba l'ID dial Verification Alerts**",
     jailRoleId: "🔹 **3tini l'ID dial Jailed Role** (awla la ma3endeksh, kteb `none`)",
     voiceJailChannelId: "🔹 **Ara m3ak l'ID dial Jailed voice channel** (awla la ma3endeksh kteb `none`)",
-    verificationLogChannelId: "🔹 **3tini l'ID dial Verification logs** (awla la m3endeksh kteb `none`)",
+    verificationLogChannelId: "🔹 **3tini l'ID dial Verification logs** (awla la ma3endeksh kteb `none`)",
     needHelpChannelId: "🔹 **3tini l'ID dial Need Help channel**",
     helperRoleId: "🔹 **3tini l'ID dial Helper Role**",
     needHelpLogChannelId: "🔹 **3tini l'ID dial Need Help logs** (awla `none`)"
@@ -226,10 +230,15 @@ const slashCommands = [
   new SlashCommandBuilder().setName('jinfo').setDescription('Get jail info for a user')
     .addStringOption(o => o.setName('userid').setDescription('User ID').setRequired(true))
     .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
-  new SlashCommandBuilder().setName('unban').setDescription('Unjail a user')
+  // New command: /unjail – unjail a user (remove jail role and add unverified role)
+  new SlashCommandBuilder().setName('unjail').setDescription('Unjail a user')
     .addStringOption(o => o.setName('userid').setDescription('User ID').setRequired(true))
     .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
-  new SlashCommandBuilder().setName('binfo').setDescription('Show total bans')
+  // New command: /unban – remove a server ban
+  new SlashCommandBuilder().setName('unban').setDescription('Unban a user from the server')
+    .addStringOption(o => o.setName('userid').setDescription('User ID').setRequired(true))
+    .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
+  new SlashCommandBuilder().setName('binfo').setDescription('Show total jailed users')
     .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
   new SlashCommandBuilder().setName('topvrf').setDescription('Show top verificators')
     .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
@@ -436,7 +445,7 @@ client.on('interactionCreate', async interaction => {
     return interaction.reply({ content: `Welcome message:\n${currentMsg}`, ephemeral: true });
   }
   
-  // ----- JAIL SYSTEM COMMANDS (Focus on Fixing Jail) -----
+  // ----- JAIL SYSTEM COMMANDS -----
   if (commandName === "jail") {
     if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
       return interaction.reply({ content: "You are not allowed to use this command.", ephemeral: true });
@@ -483,6 +492,51 @@ client.on('interactionCreate', async interaction => {
     }
   }
   
+  // Unjail: remove jail role and add unverified role so that the user can rejoin verification.
+  if (commandName === "unjail") {
+    if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+      return interaction.reply({ content: "You are not allowed to use this command.", ephemeral: true });
+    }
+    const targetId = interaction.options.getString("userid");
+    const targetMember = interaction.guild.members.cache.get(targetId);
+    if (!targetMember) return interaction.reply({ content: "User not found.", ephemeral: true });
+    try {
+      // Remove jail role if defined.
+      if (config.jailRoleId && config.jailRoleId !== "none") {
+        await targetMember.roles.remove(config.jailRoleId);
+      }
+      // Add unverified role so they can see the verification channel.
+      if (config.unverifiedRoleId) {
+        const unverifiedRole = interaction.guild.roles.cache.get(config.unverifiedRoleId);
+        if (unverifiedRole) await targetMember.roles.add(unverifiedRole);
+      }
+      // Remove jail info if stored.
+      jailData.delete(targetMember.id);
+      const embed = new EmbedBuilder()
+        .setColor(0xFFEB3B)
+        .setDescription(`✅ ${interaction.member} unjailed <@${targetId}>. The unverified role has been assigned so they can rejoin verification.`);
+      return interaction.reply({ embeds: [embed], ephemeral: false });
+    } catch (err) {
+      console.error("Unjail error:", err);
+      return interaction.reply({ content: "Failed to unjail the user.", ephemeral: true });
+    }
+  }
+  
+  // Unban: lift a server ban.
+  if (commandName === "unban") {
+    if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+      return interaction.reply({ content: "You are not allowed to use this command.", ephemeral: true });
+    }
+    const targetId = interaction.options.getString("userid");
+    try {
+      await interaction.guild.members.unban(targetId);
+      return interaction.reply({ content: `✅ ${interaction.member} unbanned <@${targetId}> from the server.`, ephemeral: false });
+    } catch (err) {
+      console.error("Unban error:", err);
+      return interaction.reply({ content: "Failed to unban the user.", ephemeral: true });
+    }
+  }
+  
   if (commandName === "jinfo") {
     if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
       return interaction.reply({ content: "You are not allowed to use this command.", ephemeral: true });
@@ -494,28 +548,6 @@ client.on('interactionCreate', async interaction => {
       .setColor(0xFFEB3B)
       .setDescription(`Jail Info for <@${targetId}>:\nJailed by: <@${info.jailer}>\nReason: ${info.reason}\nTime: ${new Date(info.time).toLocaleString()}`);
     return interaction.reply({ embeds: [embed], ephemeral: false });
-  }
-  
-  if (commandName === "unban") {
-    if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-      return interaction.reply({ content: "You are not allowed to use this command.", ephemeral: true });
-    }
-    const targetId = interaction.options.getString("userid");
-    const targetMember = interaction.guild.members.cache.get(targetId);
-    if (!targetMember) return interaction.reply({ content: "User not found.", ephemeral: true });
-    try {
-      if (config.jailRoleId && config.jailRoleId !== "none") {
-        await targetMember.roles.remove(config.jailRoleId);
-      }
-      jailData.delete(targetId);
-      const embed = new EmbedBuilder()
-        .setColor(0xFFEB3B)
-        .setDescription(`✅ ${interaction.member} unjailed <@${targetId}>.`);
-      return interaction.reply({ embeds: [embed], ephemeral: false });
-    } catch (err) {
-      console.error("Unjail error:", err);
-      return interaction.reply({ content: "Failed to unjail the user.", ephemeral: true });
-    }
   }
   
   if (commandName === "binfo") {
@@ -532,7 +564,7 @@ client.on('interactionCreate', async interaction => {
   // ------------------------------
   // Global Admin Commands (rest)
   // ------------------------------
-  const globalCmds = ["setwelcome", "showwelcome", "jail", "jinfo", "unban", "binfo", "topvrf", "toponline"];
+  const globalCmds = ["setwelcome", "showwelcome", "jail", "jinfo", "unjail", "unban", "binfo", "topvrf", "toponline"];
   if (globalCmds.includes(commandName)) {
     // Already handled above.
     return;
@@ -700,7 +732,7 @@ client.on('interactionCreate', async interaction => {
       }
       case "hide": {
         await voiceChannel.permissionOverwrites.edit(interaction.guild.id, { ViewChannel: false });
-        responseText = `✅ ${interaction.member} hide the session!`;
+        responseText = `✅ ${interaction.member} hid the session!`;
         break;
       }
       case "unhide": {

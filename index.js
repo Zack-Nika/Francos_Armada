@@ -47,8 +47,7 @@ const client = new Client({
     GatewayIntentBits.GuildMembers,
     GatewayIntentBits.GuildVoiceStates,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent,
-    GatewayIntentBits.DirectMessages
+    GatewayIntentBits.MessageContent
   ],
   partials: [Partials.Channel]
 });
@@ -65,7 +64,8 @@ client.once(Events.ClientReady, () => {
 const setupStarted = new Map(); // Prevent duplicate setups per guild
 // verificationSessions: { channelId: { userId, verified?: boolean } }
 const verificationSessions = new Map();
-// onetapSessions: { channelId: { owner, type, rejectedUsers, baseName, status } }
+// onetapSessions: store { owner, type, rejectedUsers, baseName, status }
+// "baseName" is the channel's original name and "status" is the extra subtitle.
 const onetapSessions = new Map();
 const jailData = new Map(); // For jail/unban commands
 
@@ -237,35 +237,35 @@ const slashCommands = [
   new SlashCommandBuilder().setName('toponline').setDescription('Show top online users')
     .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
 
-  // Session commands (owner-only; functionality implemented below):
+  // Session commands (owner-only):
   new SlashCommandBuilder().setName('claim').setDescription('Claim an abandoned session'),
   new SlashCommandBuilder().setName('mute').setDescription('Mute a user in your session')
     .addUserOption(o => o.setName('target').setDescription('User to mute').setRequired(true)),
   new SlashCommandBuilder().setName('unmute').setDescription('Unmute a user in your session')
     .addUserOption(o => o.setName('target').setDescription('User to unmute').setRequired(true)),
-  new SlashCommandBuilder().setName('lock').setDescription('Lock your session (prevent new users from joining)'),
-  new SlashCommandBuilder().setName('unlock').setDescription('Unlock your session (allow new users)'),
+  new SlashCommandBuilder().setName('lock').setDescription('Lock your session (prevent new joins)'),
+  new SlashCommandBuilder().setName('unlock').setDescription('Unlock your session (allow new joins)'),
   new SlashCommandBuilder().setName('limit').setDescription('Set a user limit for your session')
     .addIntegerOption(o => o.setName('number').setDescription('User limit').setRequired(true)),
   new SlashCommandBuilder().setName('reject').setDescription('Reject a user from your session')
     .addUserOption(o => o.setName('target').setDescription('User to reject').setRequired(true)),
   new SlashCommandBuilder().setName('perm').setDescription('Permit a rejected user to join again')
     .addUserOption(o => o.setName('target').setDescription('User to permit').setRequired(true)),
-  new SlashCommandBuilder().setName('hide').setDescription('Hide your session from others'),
-  new SlashCommandBuilder().setName('unhide').setDescription('Unhide your session for others'),
+  new SlashCommandBuilder().setName('hide').setDescription('Hide your session'),
+  new SlashCommandBuilder().setName('unhide').setDescription('Unhide your session'),
   new SlashCommandBuilder().setName('transfer').setDescription('Transfer session ownership')
     .addUserOption(o => o.setName('target').setDescription('User to transfer to').setRequired(true)),
   new SlashCommandBuilder().setName('name').setDescription('Rename your session (base name)')
     .addStringOption(o => o.setName('text').setDescription('New base name').setRequired(true)),
-  new SlashCommandBuilder().setName('status').setDescription('Set a status for your session (second line)')
+  new SlashCommandBuilder().setName('status').setDescription('Set a status for your session (displayed under the base name)')
     .addStringOption(o => o.setName('text').setDescription('Status text').setRequired(true)),
   new SlashCommandBuilder().setName('help').setDescription('Show available commands'),
-  
-  // Verification commands (for verificators/admins):
+
+  // Verification commands (restricted to verificators/admins):
   new SlashCommandBuilder().setName('boy').setDescription('Verify as Boy (verificators only)'),
   new SlashCommandBuilder().setName('girl').setDescription('Verify as Girl (verificators only)'),
-  
-  // Admin command: /aji – move a tagged user to your current voice channel
+
+  // Admin command:
   new SlashCommandBuilder().setName('aji')
     .setDescription('Move a tagged user to your current voice channel (admin only)')
     .addUserOption(o => o.setName('target').setDescription('User to move').setRequired(true))
@@ -359,7 +359,7 @@ client.on('interactionCreate', async interaction => {
       }
     }
     
-    // Profile Buttons: "Avatar" and "Banner"
+    // Profile Buttons: "Avatar" or "Banner"
     if (interaction.customId.startsWith("avatar_") || interaction.customId.startsWith("banner_")) {
       const [action, userId] = interaction.customId.split('_');
       try {
@@ -385,7 +385,7 @@ client.on('interactionCreate', async interaction => {
         return interaction.reply({ content: "Error fetching user data.", ephemeral: true });
       }
     }
-    return; // End button interactions.
+    return;
   }
   
   if (!interaction.isChatInputCommand()) return;
@@ -395,7 +395,7 @@ client.on('interactionCreate', async interaction => {
   
   const { commandName } = interaction;
   
-  // Global Admin Commands (already restricted by default permissions)
+  // Global Admin Commands (restricted by default permissions)
   const globalCmds = ["setprefix", "setwelcome", "showwelcome", "jail", "jinfo", "unban", "binfo", "topvrf", "toponline"];
   if (globalCmds.includes(commandName)) {
     // [Global command logic if needed]
@@ -439,13 +439,13 @@ client.on('interactionCreate', async interaction => {
           const logEmbed = new EmbedBuilder()
             .setColor(0xFFEB3B)
             .setTitle("Verification Log")
-            .setDescription(`${interaction.user} has verified ${unverifiedMember} as ${commandName === "boy" ? "Boy" : "Girl"}.`)
+            .setDescription(`${interaction.user} has verified ${unverifiedMember} as **${commandName === "boy" ? "Boy" : "Girl"}**.`)
             .setTimestamp();
           await logsChannel.send({ embeds: [logEmbed] });
         }
       }
       
-      // Mark this verification session as verified; voiceStateUpdate later moves the user.
+      // Mark verified – later in voiceStateUpdate, the verified user will be moved.
       verificationSessions.set(vc.id, { userId: sessionData.userId, verified: true });
     } catch (err) {
       console.error("Verification error:", err);
@@ -454,7 +454,7 @@ client.on('interactionCreate', async interaction => {
     return;
   }
   
-  // Admin Command: /aji – Move a tagged user to your voice channel
+  // Admin Command: /aji – move a tagged user to your voice channel
   if (commandName === "aji") {
     if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
       return interaction.reply({ content: "You are not allowed to use this command.", ephemeral: true });
@@ -476,7 +476,7 @@ client.on('interactionCreate', async interaction => {
     }
   }
   
-  // Session (One-Tap) Commands – These commands change the channel settings and update session data.
+  // Session (One-Tap) Commands – Owner-only commands.
   const sessionCommands = ["claim", "mute", "unmute", "lock", "unlock", "limit", "reject", "perm", "hide", "unhide", "transfer", "name", "status"];
   if (sessionCommands.includes(commandName)) {
     const voiceChannel = interaction.member.voice.channel;
@@ -487,8 +487,7 @@ client.on('interactionCreate', async interaction => {
       return interaction.reply({ embeds: [embed], ephemeral: true });
     }
     let session = onetapSessions.get(voiceChannel.id);
-    
-    // /claim: allow if the old owner is absent
+    // /claim: allow claiming if the old owner is not in the channel.
     if (commandName === "claim") {
       if (!voiceChannel.members.has(session.owner)) {
         session.owner = interaction.user.id;
@@ -504,15 +503,13 @@ client.on('interactionCreate', async interaction => {
         return interaction.reply({ embeds: [embed], ephemeral: true });
       }
     }
-    
-    // Must be the actual owner
+    // For all other commands, ensure the issuer is the owner.
     if (session.owner !== interaction.user.id) {
       const embed = new EmbedBuilder()
         .setColor(0xFFEB3B)
         .setDescription(`⚠️ ${interaction.member}, you are not the owner of this session.`);
       return interaction.reply({ embeds: [embed], ephemeral: true });
     }
-    
     let responseText = "";
     switch (commandName) {
       case "mute": {
@@ -538,19 +535,16 @@ client.on('interactionCreate', async interaction => {
         break;
       }
       case "lock": {
-        // Deny connect for everyone
+        // Lock channel from new joins by denying Connect permission to @everyone,
+        // but then explicitly ensure the session owner has permission.
         await voiceChannel.permissionOverwrites.edit(interaction.guild.id, { Connect: false });
-        // Explicitly allow connect for current members
-        for (const [memberId] of voiceChannel.members) {
-          await voiceChannel.permissionOverwrites.edit(memberId, { Connect: true });
-        }
-        responseText = `✅ ${interaction.member}, your session is now locked!`;
+        await voiceChannel.permissionOverwrites.edit(session.owner, { Connect: true });
+        responseText = `✅ ${interaction.member}, your session has been locked!`;
         break;
       }
       case "unlock": {
-        // Remove the "Connect" overwrite for everyone
-        await voiceChannel.permissionOverwrites.delete(interaction.guild.id).catch(() => {});
-        responseText = `✅ ${interaction.member}, your session is now unlocked!`;
+        await voiceChannel.permissionOverwrites.edit(interaction.guild.id, { Connect: true });
+        responseText = `✅ ${interaction.member}, your session has been unlocked!`;
         break;
       }
       case "limit": {
@@ -572,7 +566,7 @@ client.on('interactionCreate', async interaction => {
       case "perm": {
         const permTarget = interaction.options.getUser("target");
         await voiceChannel.permissionOverwrites.edit(permTarget.id, { Connect: null });
-        responseText = `✅ ${interaction.member}, you have permitted ${permTarget} to join your session again!`;
+        responseText = `✅ ${interaction.member}, ${permTarget} is now permitted to join your session again!`;
         break;
       }
       case "hide": {
@@ -595,14 +589,14 @@ client.on('interactionCreate', async interaction => {
       case "name": {
         const newName = interaction.options.getString("text");
         session.baseName = newName;
-        // Compose the final channel name: baseName plus a newline and status (if any)
+        // Combine baseName and status with a newline (if status exists)
         let finalName = newName;
         if (session.status && session.status.trim() !== "") {
           finalName += `\n${session.status}`;
         }
         try {
           await voiceChannel.setName(finalName);
-          responseText = `✅ ${interaction.member}, your channel has been renamed to:\n**${newName}**`;
+          responseText = `✅ ${interaction.member}, your session has been renamed:\n**${newName}**`;
         } catch (err) {
           responseText = `⚠️ ${interaction.member}, failed to rename your session.`;
         }
@@ -611,17 +605,20 @@ client.on('interactionCreate', async interaction => {
       case "status": {
         const newStatus = interaction.options.getString("text");
         session.status = newStatus;
-        // Compose final channel name using baseName (or current name if not set)
-        let base = session.baseName ? session.baseName : voiceChannel.name;
+        let base = session.baseName || voiceChannel.name;
+        // Remove any previous newline part if exists.
+        if (base.includes("\n")) {
+          base = base.split("\n")[0];
+        }
         let finalName = base;
         if (newStatus.trim() !== "") {
           finalName += `\n${newStatus}`;
         }
         try {
           await voiceChannel.setName(finalName);
-          responseText = `✅ ${interaction.member}, your channel's status has been updated to:\n**${newStatus}**`;
+          responseText = `✅ ${interaction.member}, your channel status has been updated to:\n**${newStatus}**`;
         } catch (err) {
-          responseText = `⚠️ ${interaction.member}, failed to update your channel status.`;
+          responseText = `⚠️ ${interaction.member}, failed to update your session status.`;
         }
         break;
       }
@@ -639,7 +636,7 @@ client.on('interactionCreate', async interaction => {
 });
 
 // ------------------------------
-// Profile Viewer via "R" message command
+// Profile Viewer via "R" Message Command
 // ------------------------------
 client.on('messageCreate', async message => {
   if (message.author.bot) return;
@@ -667,7 +664,7 @@ client.on('messageCreate', async message => {
 });
 
 // ------------------------------
-// Setup Handler – "ready" command in bot-setup channel
+// Setup Handler – "ready" Command in bot-setup Channel
 // ------------------------------
 client.on('messageCreate', async message => {
   if (message.author.bot) return;
@@ -697,7 +694,7 @@ client.on('messageCreate', async message => {
 });
 
 // ------------------------------
-// On Guild Join – Create bot-setup & bot-config Channels with Language Selection
+// On Guild Join – Create "bot-setup" & "bot-config" Channels with Language Selection
 // ------------------------------
 client.on(Events.GuildCreate, async guild => {
   try {
@@ -715,7 +712,7 @@ client.on(Events.GuildCreate, async guild => {
     await guild.channels.create({
       name: 'bot-config',
       type: 0,
-      topic: 'Use slash commands for configuration (e.g. /setprefix, /setwelcome, etc.)',
+      topic: 'Use slash commands for configuration (e.g., /setprefix, /setwelcome, etc.)',
       permissionOverwrites: [
         { id: guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
         { id: owner.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] }

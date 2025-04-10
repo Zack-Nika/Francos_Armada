@@ -289,7 +289,7 @@ const slashCommands = [
 // Interaction Handler for Buttons & Slash Commands
 // ------------------------------
 client.on('interactionCreate', async interaction => {
-  // Handle language button interactions
+  // Handle language button interactions first.
   if (interaction.isButton() && interaction.customId.startsWith("lang_")) {
     const chosenLang = interaction.customId.split("_")[1]; // e.g., "darija"
     let configData = await settingsCollection.findOne({ serverId: interaction.guild.id });
@@ -298,7 +298,7 @@ client.on('interactionCreate', async interaction => {
     await settingsCollection.updateOne({ serverId: interaction.guild.id }, { $set: { language: chosenLang } }, { upsert: true });
     const embed = new EmbedBuilder()
       .setColor(0xFFEB3B)
-      .setDescription(`✅ Language has been set to **${chosenLang}**! Now type "ready" to begin setup.`);
+      .setDescription(`✅ Language has been set to **${chosenLang}**!\nNow type "ready" to begin setup.`);
     return interaction.reply({ embeds: [embed], ephemeral: true });
   }
   
@@ -455,7 +455,7 @@ client.on('interactionCreate', async interaction => {
           await logsChannel.send({ embeds: [logEmbed] });
         }
       }
-      // Mark the verification session as verified so voiceStateUpdate moves the user later.
+      // Mark the verification session as verified for later moving.
       verificationSessions.set(vc.id, { userId: sessionData.userId, verified: true });
     } catch (err) {
       console.error("Verification error:", err);
@@ -497,7 +497,7 @@ client.on('interactionCreate', async interaction => {
       return interaction.reply({ embeds: [embed], ephemeral: true });
     }
     let session = onetapSessions.get(voiceChannel.id);
-    // /claim: allow claim if the current owner is absent.
+    // /claim: allow claiming if the current owner is not present.
     if (commandName === "claim") {
       if (!voiceChannel.members.has(session.owner)) {
         session.owner = interaction.user.id;
@@ -513,7 +513,6 @@ client.on('interactionCreate', async interaction => {
         return interaction.reply({ embeds: [embed], ephemeral: true });
       }
     }
-    // For other session commands, ensure the issuer is the session owner.
     if (session.owner !== interaction.user.id) {
       const embed = new EmbedBuilder()
         .setColor(0xFFEB3B)
@@ -545,7 +544,6 @@ client.on('interactionCreate', async interaction => {
         break;
       }
       case "lock": {
-        // Lock the session: deny Connect for the guild and ensure owner's permission.
         await voiceChannel.permissionOverwrites.edit(interaction.guild.id, { Connect: false });
         await voiceChannel.permissionOverwrites.edit(session.owner, { Connect: true });
         responseText = `✅ ${interaction.member}, your session has been locked!`;
@@ -579,7 +577,6 @@ client.on('interactionCreate', async interaction => {
         break;
       }
       case "hide": {
-        // Hide the session: deny ViewChannel for the guild.
         await voiceChannel.permissionOverwrites.edit(interaction.guild.id, { ViewChannel: false });
         responseText = `✅ ${interaction.member}, your session is now hidden!`;
         break;
@@ -811,8 +808,9 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
       return;
     }
     
-    // One-Tap Entry: user enters the permanent one-tap channel.
-    if (config.oneTapChannelId && newState.channelId === config.oneTapChannelId) {
+    // One-Tap Entry: when a user joins the permanent one-tap channel.
+    // Added a check so that if the user is really joining (i.e. no oldState.channelId or oldState isn't oneTapChannel).
+    if (config.oneTapChannelId && newState.channelId === config.oneTapChannelId && (!oldState.channelId || oldState.channelId !== config.oneTapChannelId)) {
       if (config.unverifiedRoleId && member.roles.cache.has(config.unverifiedRoleId)) return;
       const parentCategory = newState.channel.parentId;
       const ephemeralChannel = await guild.channels.create({
@@ -835,8 +833,8 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
       await member.voice.setChannel(ephemeralChannel);
     }
     
-    // Need-Help Entry: user enters the permanent need-help channel.
-    if (config.needHelpChannelId && newState.channelId === config.needHelpChannelId) {
+    // Need-Help Entry: when a user joins the permanent need-help channel.
+    if (config.needHelpChannelId && newState.channelId === config.needHelpChannelId && (!oldState.channelId || oldState.channelId !== config.needHelpChannelId)) {
       if (config.unverifiedRoleId && member.roles.cache.has(config.unverifiedRoleId)) return;
       for (const [channelId, session] of onetapSessions.entries()) {
         if (session.owner === member.id && session.type === "needHelp") {
@@ -887,7 +885,7 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
     }
     
     // NEW: When a verification channel (marked verified) is left with only one member,
-    // move that member to an open one-tap channel if one exists; otherwise, create a new one-tap channel.
+    // move that member to an open one-tap channel if available; otherwise, create one.
     for (const [channelId, session] of verificationSessions.entries()) {
       const verifChannel = guild.channels.cache.get(channelId);
       if (!verifChannel) continue;
@@ -954,10 +952,7 @@ setInterval(async () => {
   }
   for (const [channelId, session] of verificationSessions.entries()) {
     const channel = client.channels.cache.get(channelId);
-    if (!channel) {
-      verificationSessions.delete(channelId);
-      continue;
-    }
+    if (!channel) { verificationSessions.delete(channelId); continue; }
     if (channel.type === 2 && channel.members.size === 0) {
       try {
         await channel.delete();

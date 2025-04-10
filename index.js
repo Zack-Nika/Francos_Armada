@@ -970,7 +970,7 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
           const joinButton = new ButtonBuilder()
             .setCustomId(`join_help_${ephemeralChannel.id}`)
             .setLabel("Join Help")
-            .setStyle(ButtonStyle.Success);
+            .setStyle(ButtonStyle.Danger);
           const row = new ActionRowBuilder().addComponents(joinButton);
           const msg = await logChannel.send({
             content: `<@&${config.helperRoleId}>`,

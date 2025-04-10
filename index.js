@@ -3,13 +3,12 @@
 // Verification (/boy and /girl), One-Tap, Need-Help, Profile Viewer (via "R" message),
 // /aji and Notifications
 //
-// THIS VERSION FIXES THE JAIL SYSTEM, UPDATES THE NEED-HELP NOTIFICATIONS,
-// ADDS /setwelcome AND /showwelcome FUNCTIONALITY, REMOVES THE /setprefix COMMAND,
-// AND MAKES THE FOLLOWING CHANGES:
-//  1. Ephemeral voice channels now include an extra permission overwrite to hide them from the jailed role.
-//  2. When joining a verification session via invite (if not in voice), the invite is sent as plain text.
-//  3. New members receive the configured welcome message via DM.
-//
+// THIS VERSION INTEGRATES:
+// • BAN SYSTEM: New /ban command and updated /binfo (showing banned + jailed counts).
+// • ONE-TAP WELCOME EMBED: When a one-tap voice channel is created, an associated hidden text channel is created
+//   to show a welcome embed (using an image URL provided during setup) with instructions.
+// • NEED-HELP CHANNEL UPDATES: Helper role is allowed to view need-help channels.
+// • ALL EXISTING FUNCTIONALITY REMAINS UNCHANGED.
 
 require('dotenv').config();
 const {
@@ -48,7 +47,7 @@ async function connectToMongo() {
 connectToMongo();
 
 // ------------------------------
-// Create Discord Client (SINGLE declaration)
+// Create Discord Client
 // ------------------------------
 const client = new Client({
   intents: [
@@ -72,7 +71,7 @@ client.once(Events.ClientReady, () => {
 // ------------------------------
 const setupStarted = new Map(); // Prevent duplicate setups per guild
 const verificationSessions = new Map(); // { channelId: { userId, verified?: boolean } }
-const onetapSessions = new Map(); // { channelId: { owner, type, rejectedUsers, baseName, status } }
+const onetapSessions = new Map(); // { channelId: { owner, type, rejectedUsers, baseName, status, textChannelId? } }
 const jailData = new Map(); // For jail/unban commands
 
 // ------------------------------
@@ -92,7 +91,8 @@ const languagePrompts = {
     verificationLogChannelId: "🔹 **# Provide the Verification Log Channel ID** (or type `none`)",
     needHelpChannelId: "🔹 **# Provide the Need Help Channel ID**",
     helperRoleId: "🔹 **# Provide the Helper Role ID**",
-    needHelpLogChannelId: "🔹 **# Provide the Need Help Log Channel ID** (or type `none`)"
+    needHelpLogChannelId: "🔹 **# Provide the Need Help Log Channel ID** (or type `none`)",
+    oneTapImage: "🔹 **# Provide the URL for the One-Tap Embed Image (for your welcome message).\n(Explanation: Upload an image to a public Discord channel or another host, then copy and paste the direct link here. If none, type `none`.)**"
   },
   darija: {
     verifiedRoleId: "🔹 **3tini l'ID dial Verified Boy Role**",
@@ -107,7 +107,8 @@ const languagePrompts = {
     verificationLogChannelId: "🔹 **3tini l'ID dial Verification logs** (awla la ma3endeksh kteb `none`)",
     needHelpChannelId: "🔹 **3tini l'ID dial Need Help channel**",
     helperRoleId: "🔹 **3tini l'ID dial Helper Role**",
-    needHelpLogChannelId: "🔹 **3tini l'ID dial Need Help logs** (awla `none`)"
+    needHelpLogChannelId: "🔹 **3tini l'ID dial Need Help logs** (awla `none`)",
+    oneTapImage: "🔹 **3tini l'URL dial taswira li bghiti tkhdem biha f one-tap (ila ma3andkch, ktb `none`)**"
   },
   spanish: {
     verifiedRoleId: "🔹 **# Proporciona el ID del rol Verified Boy**",
@@ -122,7 +123,8 @@ const languagePrompts = {
     verificationLogChannelId: "🔹 **# Proporciona el ID del canal de logs de verificación** (o escribe `none`)",
     needHelpChannelId: "🔹 **# Proporciona el ID del canal Need Help**",
     helperRoleId: "🔹 **# Proporciona el ID del rol Helper**",
-    needHelpLogChannelId: "🔹 **# Proporciona el ID del canal de logs de Need Help** (o escribe `none`)"
+    needHelpLogChannelId: "🔹 **# Proporciona el ID del canal de logs Need Help** (o escribe `none`)",
+    oneTapImage: "🔹 **# Proporciona la URL de la imagen para el mensaje de bienvenida en One-Tap. (Si no, escribe `none`.)**"
   },
   russian: {
     verifiedRoleId: "🔹 **# Укажите ID роли для подтверждённого парня**",
@@ -137,7 +139,8 @@ const languagePrompts = {
     verificationLogChannelId: "🔹 **# Укажите ID канала логов проверки** (или напишите `none`)",
     needHelpChannelId: "🔹 **# Укажите ID канала Need Help**",
     helperRoleId: "🔹 **# Укажите ID роли для помощника**",
-    needHelpLogChannelId: "🔹 **# Укажите ID канала логов Need Help** (или напишите `none`)"
+    needHelpLogChannelId: "🔹 **# Укажите ID канала логов Need Help** (или напишите `none`)",
+    oneTapImage: "🔹 **# Укажите URL изображения для приветственного сообщения в One-Tap. (Если нет, введите `none`.)**"
   },
   french: {
     verifiedRoleId: "🔹 **# Fournissez l'ID du rôle Verified Boy**",
@@ -152,7 +155,8 @@ const languagePrompts = {
     verificationLogChannelId: "🔹 **# Fournissez l'ID du canal de logs de vérification** (ou tapez `none`)",
     needHelpChannelId: "🔹 **# Fournissez l'ID du canal Need Help**",
     helperRoleId: "🔹 **# Fournissez l'ID du rôle Helper**",
-    needHelpLogChannelId: "🔹 **# Fournissez l'ID du canal de logs Need Help** (ou tapez `none`)"
+    needHelpLogChannelId: "🔹 **# Fournissez l'ID du canal de logs Need Help** (ou tapez `none`)",
+    oneTapImage: "🔹 **# Fournissez l'URL de l'image pour le message de bienvenue de One-Tap (si aucun, tapez `none`).**"
   }
 };
 
@@ -220,7 +224,7 @@ async function runSetup(ownerId, setupChannel, guildId, lang) {
 // ------------------------------
 client.commands = new Collection();
 const slashCommands = [
-  // Removed /setprefix command as requested.
+  // Removed /setprefix command.
   new SlashCommandBuilder().setName('setwelcome').setDescription('Set a custom welcome message')
     .addStringOption(o => o.setName('message').setDescription('Welcome message').setRequired(true)),
   new SlashCommandBuilder().setName('showwelcome').setDescription('Show the current welcome message'),
@@ -231,21 +235,23 @@ const slashCommands = [
   new SlashCommandBuilder().setName('jinfo').setDescription('Get jail info for a user')
     .addStringOption(o => o.setName('userid').setDescription('User ID').setRequired(true))
     .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
-  // New command: /unjail – unjail a user (remove jail role and add unverified role)
-  new SlashCommandBuilder().setName('unjail').setDescription('Unjail a user')
+  new SlashCommandBuilder().setName('unjail').setDescription('Unjail a user (remove jail role and add unverified role)')
     .addStringOption(o => o.setName('userid').setDescription('User ID').setRequired(true))
     .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
-  // New command: /unban – remove a server ban
   new SlashCommandBuilder().setName('unban').setDescription('Unban a user from the server')
     .addStringOption(o => o.setName('userid').setDescription('User ID').setRequired(true))
     .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
-  new SlashCommandBuilder().setName('binfo').setDescription('Show total jailed users')
+  new SlashCommandBuilder().setName('ban').setDescription('Ban a user from the server')
+    .addStringOption(o => o.setName('userid').setDescription('User ID').setRequired(true))
+    .addStringOption(o => o.setName('reason').setDescription('Reason').setRequired(true))
+    .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
+  new SlashCommandBuilder().setName('binfo').setDescription('Show total banned and jailed users')
     .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
   new SlashCommandBuilder().setName('topvrf').setDescription('Show top verificators')
     .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
   new SlashCommandBuilder().setName('toponline').setDescription('Show top online users')
     .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
-  
+
   // Session commands (owner-only):
   new SlashCommandBuilder().setName('claim').setDescription('Claim an abandoned session'),
   new SlashCommandBuilder().setName('mute').setDescription('Mute a user in your session')
@@ -269,15 +275,20 @@ const slashCommands = [
   new SlashCommandBuilder().setName('status').setDescription('Set a status for your session (displayed under base name)')
     .addStringOption(o => o.setName('text').setDescription('Status text').setRequired(true)),
   new SlashCommandBuilder().setName('help').setDescription('Show available commands'),
-  
+
   // Verification commands (restricted):
   new SlashCommandBuilder().setName('boy').setDescription('Verify as Boy (verificators only)'),
   new SlashCommandBuilder().setName('girl').setDescription('Verify as Girl (verificators only)'),
-  
+
   // Admin command:
   new SlashCommandBuilder().setName('aji')
     .setDescription('Move a tagged user to your current voice channel (admin only)')
     .addUserOption(o => o.setName('target').setDescription('User to move').setRequired(true))
+    .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
+
+  // New command for one-tap image update (optional)
+  new SlashCommandBuilder().setName('setonetapimage').setDescription('Set the image URL for the One-Tap welcome embed')
+    .addStringOption(o => o.setName('link').setDescription('Paste the direct image URL (or type "none" if not used)').setRequired(true))
     .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator)
 ];
 
@@ -299,21 +310,44 @@ const slashCommands = [
 // Interaction Handler for Buttons & Slash Commands
 // ------------------------------
 client.on('interactionCreate', async interaction => {
-  // Handle language button interactions first.
+  // Language button interactions.
   if (interaction.isButton() && interaction.customId.startsWith("lang_")) {
     const chosenLang = interaction.customId.split("_")[1]; // e.g., "darija"
     let configData = await settingsCollection.findOne({ serverId: interaction.guild.id });
     if (!configData) configData = { serverId: interaction.guild.id };
     configData.language = chosenLang;
-    await settingsCollection.updateOne({ serverId: interaction.guild.id }, { $set: { language: chosenLang } }, { upsert: true });
+    await settingsCollection.updateOne(
+      { serverId: interaction.guild.id },
+      { $set: { language: chosenLang } },
+      { upsert: true }
+    );
     const embed = new EmbedBuilder()
       .setColor(0xFFEB3B)
       .setDescription(`✅ Language has been set to **${chosenLang}**!\nNow type "ready" to begin setup.`);
     return interaction.reply({ embeds: [embed], ephemeral: true });
   }
+
+  // One-tap image update command.
+  if (interaction.isChatInputCommand() && interaction.commandName === "setonetapimage") {
+    if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+      return interaction.reply({ content: "You are not allowed to use this command.", ephemeral: true });
+    }
+    const imageLink = interaction.options.getString("link");
+    try {
+      await settingsCollection.updateOne(
+        { serverId: interaction.guild.id },
+        { $set: { oneTapImage: (imageLink.toLowerCase() === "none") ? null : imageLink } },
+        { upsert: true }
+      );
+      return interaction.reply({ content: `✅ One-Tap image updated to:\n${imageLink}`, ephemeral: false });
+    } catch (err) {
+      console.error("setonetapimage error:", err);
+      return interaction.reply({ content: "Failed to update the One-Tap image.", ephemeral: true });
+    }
+  }
   
   if (interaction.isButton()) {
-    // "Join Help" Button
+    // "Join Help" Button.
     if (interaction.customId.startsWith("join_help_")) {
       const config = await settingsCollection.findOne({ serverId: interaction.guild.id });
       if (config && config.unverifiedRoleId && interaction.member.roles.cache.has(config.unverifiedRoleId)) {
@@ -330,7 +364,6 @@ client.on('interactionCreate', async interaction => {
       }
       try {
         const ch = interaction.guild.channels.cache.get(channelId);
-        // If helper is not in any voice channel, create an invite
         if (!interaction.member.voice.channel) {
           const invite = await ch.createInvite({ maxAge: 300, maxUses: 1 });
           return interaction.reply({ content: `Click this link to join: ${invite.url}`, ephemeral: false });
@@ -349,7 +382,7 @@ client.on('interactionCreate', async interaction => {
       }
     }
     
-    // "Join Verification" Button
+    // "Join Verification" Button.
     if (interaction.customId.startsWith("join_verification_")) {
       const parts = interaction.customId.split("_");
       const channelId = parts.slice(2).join("_");
@@ -374,7 +407,6 @@ client.on('interactionCreate', async interaction => {
           setTimeout(() => replyMsg.delete().catch(() => {}), 10000);
         } else {
           const invite = await verifChannel.createInvite({ maxAge: 300, maxUses: 1 });
-          // Send as plain text instead of an embed.
           return interaction.reply({ content: `✅ ${interaction.member}, join with this link: ${invite.url}`, ephemeral: false });
         }
       } catch (err) {
@@ -383,7 +415,7 @@ client.on('interactionCreate', async interaction => {
       }
     }
     
-    // Profile Buttons: "Avatar" and "Banner"
+    // Profile Buttons: "Avatar" and "Banner".
     if (interaction.customId.startsWith("avatar_") || interaction.customId.startsWith("banner_")) {
       const [action, userId] = interaction.customId.split('_');
       try {
@@ -419,7 +451,7 @@ client.on('interactionCreate', async interaction => {
   
   const { commandName } = interaction;
   
-  // ----- IMPLEMENT /setwelcome and /showwelcome COMMANDS -----
+  // ----- SETWELCOME & SHOWWELCOME COMMANDS -----
   if (commandName === "setwelcome") {
     if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
       return interaction.reply({ content: "You are not allowed to use this command.", ephemeral: true });
@@ -453,23 +485,18 @@ client.on('interactionCreate', async interaction => {
     const targetMember = interaction.guild.members.cache.get(targetId);
     if (!targetMember) return interaction.reply({ content: "User not found.", ephemeral: true });
     try {
-      // Remove all roles from target.
       await targetMember.roles.set([]);
-      // Add jail role if defined.
       if (config.jailRoleId && config.jailRoleId !== "none") {
         const jailRole = interaction.guild.roles.cache.get(config.jailRoleId);
         if (jailRole) await targetMember.roles.add(jailRole);
       }
-      // If a voice jail channel is provided and target is in voice, move them there.
       if (config.voiceJailChannelId && config.voiceJailChannelId !== "none") {
         const jailChannel = interaction.guild.channels.cache.get(config.voiceJailChannelId);
         if (jailChannel && targetMember.voice.channel) {
           await targetMember.voice.setChannel(jailChannel);
         }
       }
-      // Store jail info.
       jailData.set(targetMember.id, { reason, jailer: interaction.user.id, time: Date.now() });
-      // DM the jailed user.
       try {
         const dmEmbed = new EmbedBuilder()
           .setColor(0xFFEB3B)
@@ -478,7 +505,7 @@ client.on('interactionCreate', async interaction => {
           .setTimestamp();
         await targetMember.send({ embeds: [dmEmbed] });
       } catch (dmErr) {
-        console.log("Could not DM the user (possibly DMs are disabled).");
+        console.log("Could not DM the user (DMs disabled).");
       }
       const embed = new EmbedBuilder()
         .setColor(0xFFEB3B)
@@ -490,7 +517,6 @@ client.on('interactionCreate', async interaction => {
     }
   }
   
-  // Unjail: remove jail role and add unverified role so that the user can rejoin verification.
   if (commandName === "unjail") {
     if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
       return interaction.reply({ content: "You are not allowed to use this command.", ephemeral: true });
@@ -499,16 +525,13 @@ client.on('interactionCreate', async interaction => {
     const targetMember = interaction.guild.members.cache.get(targetId);
     if (!targetMember) return interaction.reply({ content: "User not found.", ephemeral: true });
     try {
-      // Remove jail role if defined.
       if (config.jailRoleId && config.jailRoleId !== "none") {
         await targetMember.roles.remove(config.jailRoleId);
       }
-      // Add unverified role so they can see the verification channel.
       if (config.unverifiedRoleId) {
         const unverifiedRole = interaction.guild.roles.cache.get(config.unverifiedRoleId);
         if (unverifiedRole) await targetMember.roles.add(unverifiedRole);
       }
-      // Remove jail info if stored.
       jailData.delete(targetMember.id);
       const embed = new EmbedBuilder()
         .setColor(0xFFEB3B)
@@ -520,7 +543,6 @@ client.on('interactionCreate', async interaction => {
     }
   }
   
-  // Unban: lift a server ban.
   if (commandName === "unban") {
     if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
       return interaction.reply({ content: "You are not allowed to use this command.", ephemeral: true });
@@ -532,6 +554,46 @@ client.on('interactionCreate', async interaction => {
     } catch (err) {
       console.error("Unban error:", err);
       return interaction.reply({ content: "Failed to unban the user.", ephemeral: true });
+    }
+  }
+  
+  if (commandName === "ban") {
+    if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+      return interaction.reply({ content: "You are not allowed to use this command.", ephemeral: true });
+    }
+    const targetId = interaction.options.getString("userid");
+    const reason = interaction.options.getString("reason");
+    const targetMember = interaction.guild.members.cache.get(targetId);
+    if (!targetMember) return interaction.reply({ content: "User not found.", ephemeral: true });
+    try {
+      // Ban the user with the reason.
+      await interaction.guild.members.ban(targetId, { reason });
+      // Log ban info in the "📥・banned-members" channel.
+      let banLogChannel = interaction.guild.channels.cache.find(ch => ch.name === "📥・banned-members");
+      if (!banLogChannel) {
+        // Create the banned-members channel if it doesn't exist.
+        banLogChannel = await interaction.guild.channels.create({
+          name: "📥・banned-members",
+          type: ChannelType.GuildText,
+          topic: "Logs of banned members. Only visible to Admins and the Owner.",
+          permissionOverwrites: [
+            { id: interaction.guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
+            { id: interaction.guild.ownerId, allow: [PermissionsBitField.Flags.ViewChannel] },
+            { id: client.user.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] }
+          ]
+        });
+      }
+      const banEmbed = new EmbedBuilder()
+        .setColor(0xFFEB3B)
+        .setTitle("Member Banned")
+        .setDescription(`${interaction.user} banned <@${targetId}>.\n**Reason:** ${reason}`)
+        .setThumbnail(targetMember.displayAvatarURL({ dynamic: true, size: 1024 }))
+        .setTimestamp();
+      banLogChannel.send({ embeds: [banEmbed] });
+      return interaction.reply({ content: `✅ ${interaction.member} banned <@${targetId}>.\nReason: ${reason}`, ephemeral: false });
+    } catch (err) {
+      console.error("Ban error:", err);
+      return interaction.reply({ content: "Failed to ban the user.", ephemeral: true });
     }
   }
   
@@ -552,23 +614,26 @@ client.on('interactionCreate', async interaction => {
     if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
       return interaction.reply({ content: "You are not allowed to use this command.", ephemeral: true });
     }
-    const total = jailData.size;
+    // Fetch banned count from guild bans.
+    let bannedCount = 0;
+    try {
+      const bans = await interaction.guild.bans.fetch();
+      bannedCount = bans.size;
+    } catch (err) {
+      console.error("Error fetching bans:", err);
+    }
+    const jailedCount = jailData.size;
     const embed = new EmbedBuilder()
       .setColor(0xFFEB3B)
-      .setDescription(`Total jailed users: ${total}`);
+      .setDescription(`Total Banned: ${bannedCount}\nTotal Jailed: ${jailedCount}`);
     return interaction.reply({ embeds: [embed], ephemeral: false });
   }
   
   // ------------------------------
-  // Global Admin Commands (rest)
+  // Global Admin Commands (the rest, like /topvrf, /toponline) are handled elsewhere.
   // ------------------------------
-  const globalCmds = ["setwelcome", "showwelcome", "jail", "jinfo", "unjail", "unban", "binfo", "topvrf", "toponline"];
-  if (globalCmds.includes(commandName)) {
-    // Already handled above.
-    return;
-  }
   
-  // Verification Commands: /boy and /girl
+  // Verification Commands: /boy and /girl.
   if (commandName === "boy" || commandName === "girl") {
     if (!interaction.member.roles.cache.has(config.verificatorRoleId) &&
         !interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
@@ -851,11 +916,12 @@ client.on('messageCreate', async message => {
 });
 
 // ------------------------------
-// On Guild Join – Create "bot-setup" & "bot-config" Channels with Language Selection
+// On Guild Join – Create "bot-setup", "bot-config", and "📥・banned-members" Channels
 // ------------------------------
 client.on(Events.GuildCreate, async guild => {
   try {
     const owner = await guild.fetchOwner();
+    // Create bot-setup channel.
     const setupChannel = await guild.channels.create({
       name: 'bot-setup',
       type: ChannelType.GuildText,
@@ -866,6 +932,7 @@ client.on(Events.GuildCreate, async guild => {
       ]
     });
     setupChannel.send(`<@${owner.id}>, welcome! Please choose your preferred language using the buttons below, then type "ready" to begin setup.`);
+    // Create bot-config channel.
     await guild.channels.create({
       name: 'bot-config',
       type: ChannelType.GuildText,
@@ -875,6 +942,21 @@ client.on(Events.GuildCreate, async guild => {
         { id: owner.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] }
       ]
     });
+    // Create the banned-members log channel.
+    let banLogChannel = guild.channels.cache.find(ch => ch.name === "📥・banned-members");
+    if (!banLogChannel) {
+      banLogChannel = await guild.channels.create({
+        name: "📥・banned-members",
+        type: ChannelType.GuildText,
+        topic: "Logs of banned members. Only visible to Admins and the Owner.",
+        permissionOverwrites: [
+          { id: guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
+          { id: owner.id, allow: [PermissionsBitField.Flags.ViewChannel] },
+          { id: client.user.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] }
+        ]
+      });
+    }
+    // Create language selection buttons.
     const englishButton = new ButtonBuilder().setCustomId('lang_english').setLabel('English').setStyle(ButtonStyle.Primary);
     const darijaButton = new ButtonBuilder().setCustomId('lang_darija').setLabel('Darija').setStyle(ButtonStyle.Primary);
     const spanishButton = new ButtonBuilder().setCustomId('lang_spanish').setLabel('Spanish').setStyle(ButtonStyle.Primary);
@@ -893,7 +975,7 @@ client.on(Events.GuildCreate, async guild => {
 });
 
 // ------------------------------
-// Auto-assign Unverified Role on Member Join & Send Welcome Message
+// Auto-assign Unverified Role on Member Join & Send Welcome DM
 // ------------------------------
 client.on(Events.GuildMemberAdd, async member => {
   try {
@@ -917,7 +999,7 @@ client.on(Events.GuildMemberAdd, async member => {
 });
 
 // ------------------------------
-// VoiceStateUpdate Handler – Verification, One-Tap & Need-Help
+// VoiceStateUpdate Handler – Verification, One-Tap, & Need-Help
 // ------------------------------
 client.on('voiceStateUpdate', async (oldState, newState) => {
   try {
@@ -927,13 +1009,13 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
     const config = await settingsCollection.findOne({ serverId: guild.id });
     if (!config) return;
     
-    // Prepare a jail role overwrite if set, to hide ephemeral channels from jailed users.
+    // Prepare jail role overwrite.
     let jailOverwrite = [];
     if (config.jailRoleId && config.jailRoleId !== "none") {
       jailOverwrite.push({ id: config.jailRoleId, deny: [PermissionsBitField.Flags.ViewChannel] });
     }
     
-    // Verification Entry: user enters the permanent verification channel.
+    // Verification Entry.
     if (config.voiceVerificationChannelId && newState.channelId === config.voiceVerificationChannelId) {
       if (config.unverifiedRoleId && !member.roles.cache.has(config.unverifiedRoleId)) return;
       const parentCategory = newState.channel.parentId;
@@ -975,7 +1057,7 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
       return;
     }
     
-    // One-Tap Entry: when a user joins the permanent one-tap channel.
+    // One-Tap Entry.
     if (config.oneTapChannelId && newState.channelId === config.oneTapChannelId && (!oldState.channelId || oldState.channelId !== config.oneTapChannelId)) {
       if (config.unverifiedRoleId && member.roles.cache.has(config.unverifiedRoleId)) return;
       const parentCategory = newState.channel.parentId;
@@ -990,17 +1072,48 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
           ...jailOverwrite
         ]
       });
+      // Create an associated text channel for one-tap session chat (hidden from @everyone)
+      const textChannel = await guild.channels.create({
+        name: `${member.displayName}'s Room Chat`,
+        type: ChannelType.GuildText,
+        parent: ephemeralChannel.parentId, // place in same category as the base oneTap channel
+        permissionOverwrites: [
+          { id: guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
+          { id: member.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] }
+        ]
+      });
+      // Allow helper role to view this channel.
+      if (config.helperRoleId) {
+        await textChannel.permissionOverwrites.edit(config.helperRoleId, {
+          ViewChannel: true,
+          SendMessages: true
+        });
+      }
+      
       onetapSessions.set(ephemeralChannel.id, {
         owner: member.id,
         type: "oneTap",
         rejectedUsers: [],
         baseName: ephemeralChannel.name,
-        status: ""
+        status: "",
+        textChannelId: textChannel.id
       });
       await member.voice.setChannel(ephemeralChannel);
+      
+      // Send the welcome embed in the associated text channel if an image URL is provided.
+      if (config.oneTapImage) {
+        const welcomeEmbed = new EmbedBuilder()
+          .setColor(0xFFEB3B)
+          .setTitle(`${guild.name} – Join to create your panel`)
+          .setDescription(`Welcome, ${member.displayName}!\n\nManage your voice channel using:\n• /claim\n• /mute\n• /lock\n• and more.`)
+          .setThumbnail(config.oneTapImage)
+          .setFooter({ text: "Franco's Armada 🔱" })
+          .setTimestamp();
+        await textChannel.send({ embeds: [welcomeEmbed] });
+      }
     }
     
-    // Need-Help Entry: when a user joins the permanent need-help channel.
+    // Need-Help Entry.
     if (config.needHelpChannelId && newState.channelId === config.needHelpChannelId && (!oldState.channelId || oldState.channelId !== config.needHelpChannelId)) {
       if (config.unverifiedRoleId && member.roles.cache.has(config.unverifiedRoleId)) return;
       for (const [channelId, session] of onetapSessions.entries()) {
@@ -1011,15 +1124,21 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
         }
       }
       const parentCategory = newState.channel.parentId;
-      const overrides = [
+      let overrides = [
         { id: guild.id, deny: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.Connect] }
       ];
       if (config.unverifiedRoleId) {
         overrides.push({ id: config.unverifiedRoleId, deny: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.Connect] });
       }
+      // Allow the member.
       overrides.push({ id: member.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.Connect, PermissionsBitField.Flags.Speak, PermissionsBitField.Flags.Stream, PermissionsBitField.Flags.AttachFiles] });
-      // Include jail role overwrite here too.
+      // Allow helper role to view need-help channels.
+      if (config.helperRoleId) {
+        overrides.push({ id: config.helperRoleId, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.Connect] });
+      }
+      // Include jail overwrite.
       overrides.push(...jailOverwrite);
+      
       const ephemeralChannel = await guild.channels.create({
         name: `${member.displayName} needs help`,
         type: ChannelType.GuildVoice,
@@ -1031,10 +1150,10 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
       if (config.needHelpLogChannelId && config.needHelpLogChannelId !== "none") {
         const logChannel = guild.channels.cache.get(config.needHelpLogChannelId);
         if (logChannel) {
+          // Ensure unverified users are denied in log channel.
           if (config.unverifiedRoleId) {
             await logChannel.permissionOverwrites.edit(config.unverifiedRoleId, { ViewChannel: false, Connect: false });
           }
-          // Custom need help message with your emojis.
           const embed = new EmbedBuilder()
             .setColor(0xFFEB3B)
             .setDescription(`:sos: **${member.displayName} needs help !**`);
@@ -1118,6 +1237,11 @@ setInterval(async () => {
       } catch (err) {
         console.error("Failed deleting ephemeral channel", channelId, err);
       }
+      // Also delete associated text channel if it exists.
+      if (session.textChannelId) {
+        const txtChannel = client.channels.cache.get(session.textChannelId);
+        if (txtChannel) await txtChannel.delete().catch(() => {});
+      }
       onetapSessions.delete(channelId);
     }
   }
@@ -1166,7 +1290,7 @@ client.on('messageCreate', async message => {
 });
 
 // ------------------------------
-// On Guild Join – Create "bot-setup" & "bot-config" Channels with Language Selection
+// On Guild Join – Create "bot-setup", "bot-config", and "📥・banned-members" Channels with Language Selection
 // ------------------------------
 client.on(Events.GuildCreate, async guild => {
   try {
@@ -1190,6 +1314,20 @@ client.on(Events.GuildCreate, async guild => {
         { id: owner.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] }
       ]
     });
+    // Create the banned log channel.
+    let banLogChannel = guild.channels.cache.find(ch => ch.name === "📥・banned-members");
+    if (!banLogChannel) {
+      banLogChannel = await guild.channels.create({
+        name: "📥・banned-members",
+        type: ChannelType.GuildText,
+        topic: "Logs of banned members. Read-only for admins and the owner.",
+        permissionOverwrites: [
+          { id: guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
+          { id: owner.id, allow: [PermissionsBitField.Flags.ViewChannel] },
+          { id: client.user.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] }
+        ]
+      });
+    }
     const englishButton = new ButtonBuilder().setCustomId('lang_english').setLabel('English').setStyle(ButtonStyle.Primary);
     const darijaButton = new ButtonBuilder().setCustomId('lang_darija').setLabel('Darija').setStyle(ButtonStyle.Primary);
     const spanishButton = new ButtonBuilder().setCustomId('lang_spanish').setLabel('Spanish').setStyle(ButtonStyle.Primary);
@@ -1208,12 +1346,11 @@ client.on(Events.GuildCreate, async guild => {
 });
 
 // ------------------------------
-// Auto-assign Unverified Role on Member Join & Send Welcome Message
+// Auto-assign Unverified Role on Member Join & Send Welcome DM
 // ------------------------------
 client.on(Events.GuildMemberAdd, async member => {
   try {
     const config = await settingsCollection.findOne({ serverId: member.guild.id });
-    // Send welcome message DM if set.
     if (config && config.welcomeMessage) {
       try {
         await member.send(config.welcomeMessage);

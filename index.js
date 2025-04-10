@@ -98,19 +98,19 @@ const languagePrompts = {
     needHelpLogChannelId: "🔹 **# Provide the Need Help Log Channel ID** (or type `none`)"
   },
   darija: {
-    verifiedRoleId: "🔹 **# 3tini l'ID dial Verified Boy Role**",
-    unverifiedRoleId: "🔹 **# 3tini l'ID dial Unverified Role**",
-    verifiedGirlRoleId: "🔹 **# 3tini l'ID dial Verified Girl Role**",
-    verificatorRoleId: "🔹 **# 3tini l'ID dial Verificator Role**",
-    voiceVerificationChannelId: "🔹 **# Daba 3tini l'ID dial Join Verification (fen bnadem taytverifa)**",
-    oneTapChannelId: "🔹 **# 3tini daba l'ID dial One-Tap**",
-    verificationAlertChannelId: "🔹 **# 3tini daba l'ID dial Verification Alerts**",
-    jailRoleId: "🔹 **# 3tini l'ID dial Jailed Role** (awla la ma3endeksh, kteb `none`)",
-    voiceJailChannelId: "🔹 **# Ara m3ak l'ID dial Jaled voice channel** (awla `none`)",
-    verificationLogChannelId: "🔹 **# 3tini l'ID dial Verification logs** (awla `none`)",
-    needHelpChannelId: "🔹 **# 3tini l'ID dial Need Help channel**",
-    helperRoleId: "🔹 **# 3tini l'ID dial Helper Role**",
-    needHelpLogChannelId: "🔹 **# 3tini l'ID dial Need Help logs** (awla `none`)"
+    verifiedRoleId: "🔹 **3tini l'ID dial Verified Boy Role**",
+    unverifiedRoleId: "🔹 **3tini l'ID dial Unverified Role**",
+    verifiedGirlRoleId: "🔹 **3tini l'ID dial Verified Girl Role**",
+    verificatorRoleId: "🔹 **3tini l'ID dial Verificator Role**",
+    voiceVerificationChannelId: "🔹 **Daba 3tini l'ID dial Join Verification (fen bnadem taytverifa ✅️)**",
+    oneTapChannelId: "🔹 **3tini daba l'ID dial One-Tap**",
+    verificationAlertChannelId: "🔹 **3tini daba l'ID dial Verification Alerts**",
+    jailRoleId: "🔹 **3tini l'ID dial Jailed Role** (awla la ma3endeksh, kteb `none`)",
+    voiceJailChannelId: "🔹 **Ara m3ak l'ID dial Jailed voice channel** (awla la ma3endeksh kteb `none`)",
+    verificationLogChannelId: "🔹 **3tini l'ID dial Verification logs** (awla la m3endeksh kteb `none`)",
+    needHelpChannelId: "🔹 **3tini l'ID dial Need Help channel**",
+    helperRoleId: "🔹 **3tini l'ID dial Helper Role**",
+    needHelpLogChannelId: "🔹 **3tini l'ID dial Need Help logs** (awla `none`)"
   },
   spanish: {
     verifiedRoleId: "🔹 **# Proporciona el ID del rol Verified Boy**",
@@ -165,8 +165,8 @@ const languageExtras = {
     setupComplete: "Setup complete! 🎉"
   },
   darija: {
-    setupStart: "Ghanbdaw Daba Setup. Wghade ykon kolshi sahel; sift lia ghi l'ID's li bghiti, wghaydouz kolshi mzyan.",
-    setupComplete: "Safi l'Bot rah m9ad 100%. Wila khasek shi haja, dwe m3a Franco 🔱 🎉"
+    setupStart: "Ghanbdaw Daba Setup. Wghade ykon kolshi sahel, sift lia ghi l'ID's li ghansewlek 3lihom osafi, 7de la ykono ghalten se no l'bot maghykhdemsh ❌️.",
+    setupComplete: "Safi l'Bot rah m9ad 100% ✅️ 🎉".Ila khasatek shi haja, Twasel m3a Franco 🔱 / Username: @im_franco."
   },
   spanish: {
     setupStart: "Comencemos la configuración. Por favor, copia y pega cada ID según se te solicite.",
@@ -966,10 +966,10 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
           // Use a one-line embed description.
           const embed = new EmbedBuilder()
             .setColor(0xFFEB3B)
-            .setDescription(`💡 **${member.displayName} needs help!**`);
+            .setDescription(`🆘️ **${member.displayName} needs help❗️**`);
           const joinButton = new ButtonBuilder()
             .setCustomId(`join_help_${ephemeralChannel.id}`)
-            .setLabel("Join Top")
+            .setLabel("Join Help")
             .setStyle(ButtonStyle.Success);
           const row = new ActionRowBuilder().addComponents(joinButton);
           const msg = await logChannel.send({

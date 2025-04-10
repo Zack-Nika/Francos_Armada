@@ -39,7 +39,7 @@ async function connectToMongo() {
 connectToMongo();
 
 // ------------------------------
-// Create Discord Client (single declaration)
+// Create Discord Client (SINGLE declaration)
 // ------------------------------
 const client = new Client({
   intents: [
@@ -259,7 +259,7 @@ const slashCommands = [
   new SlashCommandBuilder().setName('status').setDescription('Set a status for your session (displayed under base name)')
     .addStringOption(o => o.setName('text').setDescription('Status text').setRequired(true)),
   new SlashCommandBuilder().setName('help').setDescription('Show available commands'),
-
+  
   // Verification commands (restricted):
   new SlashCommandBuilder().setName('boy').setDescription('Verify as Boy (verificators only)'),
   new SlashCommandBuilder().setName('girl').setDescription('Verify as Girl (verificators only)'),
@@ -289,20 +289,16 @@ const slashCommands = [
 // Interaction Handler for Buttons & Slash Commands
 // ------------------------------
 client.on('interactionCreate', async interaction => {
-  // Handle language buttons first.
+  // Handle language button interactions
   if (interaction.isButton() && interaction.customId.startsWith("lang_")) {
-    const chosenLang = interaction.customId.split("_")[1]; // e.g. "darija", "english", etc.
-    // Fetch current config for the guild.
+    const chosenLang = interaction.customId.split("_")[1]; // e.g., "darija"
     let configData = await settingsCollection.findOne({ serverId: interaction.guild.id });
-    if (!configData) {
-      configData = { serverId: interaction.guild.id };
-    }
-    // Update the language in the database.
+    if (!configData) configData = { serverId: interaction.guild.id };
     configData.language = chosenLang;
     await settingsCollection.updateOne({ serverId: interaction.guild.id }, { $set: { language: chosenLang } }, { upsert: true });
     const embed = new EmbedBuilder()
       .setColor(0xFFEB3B)
-      .setDescription(`✅ Language has been set to **${chosenLang}**!\nNow type "ready" to begin setup.`);
+      .setDescription(`✅ Language has been set to **${chosenLang}**! Now type "ready" to begin setup.`);
     return interaction.reply({ embeds: [embed], ephemeral: true });
   }
   
@@ -367,7 +363,7 @@ client.on('interactionCreate', async interaction => {
             .setColor(0xFFEB3B)
             .setDescription(`✅ ${interaction.member}, join with this link: ${invite.url}`);
           const linkMsg = await interaction.reply({ embeds: [embed], ephemeral: false });
-          setTimeout(() => linkMsg.delete().catch(() => {}), 10000);
+          setTimeout(() => linkMsg.delete().catch(()=>{}), 10000);
         }
       } catch (err) {
         console.error("join_verification error:", err);
@@ -401,7 +397,7 @@ client.on('interactionCreate', async interaction => {
         return interaction.reply({ content: "Error fetching user data.", ephemeral: true });
       }
     }
-    return; // End of button interactions.
+    return; // End button interactions.
   }
   
   if (!interaction.isChatInputCommand()) return;
@@ -414,7 +410,7 @@ client.on('interactionCreate', async interaction => {
   // Global Admin Commands
   const globalCmds = ["setprefix", "setwelcome", "showwelcome", "jail", "jinfo", "unban", "binfo", "topvrf", "toponline"];
   if (globalCmds.includes(commandName)) {
-    // [Implement global command logic if needed]
+    // [Global command logic goes here if needed]
     return;
   }
   
@@ -448,7 +444,6 @@ client.on('interactionCreate', async interaction => {
         .setDescription(`✅ ${interaction.member}, you have verified ${unverifiedMember.displayName} as **${commandName === "boy" ? "Boy" : "Girl"}** successfully!`)
         .setTimestamp();
       await interaction.reply({ embeds: [embed], ephemeral: false });
-      
       if (config.verificationLogChannelId) {
         const logsChannel = interaction.guild.channels.cache.get(config.verificationLogChannelId);
         if (logsChannel) {
@@ -460,7 +455,7 @@ client.on('interactionCreate', async interaction => {
           await logsChannel.send({ embeds: [logEmbed] });
         }
       }
-      // Mark the verification session as verified for later movement.
+      // Mark the verification session as verified so voiceStateUpdate moves the user later.
       verificationSessions.set(vc.id, { userId: sessionData.userId, verified: true });
     } catch (err) {
       console.error("Verification error:", err);
@@ -502,7 +497,7 @@ client.on('interactionCreate', async interaction => {
       return interaction.reply({ embeds: [embed], ephemeral: true });
     }
     let session = onetapSessions.get(voiceChannel.id);
-    // /claim: allow claim if the current owner is absent
+    // /claim: allow claim if the current owner is absent.
     if (commandName === "claim") {
       if (!voiceChannel.members.has(session.owner)) {
         session.owner = interaction.user.id;
@@ -518,7 +513,7 @@ client.on('interactionCreate', async interaction => {
         return interaction.reply({ embeds: [embed], ephemeral: true });
       }
     }
-    // For other session commands, check that the issuer is the owner.
+    // For other session commands, ensure the issuer is the session owner.
     if (session.owner !== interaction.user.id) {
       const embed = new EmbedBuilder()
         .setColor(0xFFEB3B)
@@ -550,7 +545,7 @@ client.on('interactionCreate', async interaction => {
         break;
       }
       case "lock": {
-        // Lock session: deny Connect for @everyone, but allow owner.
+        // Lock the session: deny Connect for the guild and ensure owner's permission.
         await voiceChannel.permissionOverwrites.edit(interaction.guild.id, { Connect: false });
         await voiceChannel.permissionOverwrites.edit(session.owner, { Connect: true });
         responseText = `✅ ${interaction.member}, your session has been locked!`;
@@ -584,6 +579,7 @@ client.on('interactionCreate', async interaction => {
         break;
       }
       case "hide": {
+        // Hide the session: deny ViewChannel for the guild.
         await voiceChannel.permissionOverwrites.edit(interaction.guild.id, { ViewChannel: false });
         responseText = `✅ ${interaction.member}, your session is now hidden!`;
         break;
@@ -603,7 +599,6 @@ client.on('interactionCreate', async interaction => {
       case "name": {
         const newName = interaction.options.getString("text");
         session.baseName = newName;
-        // Compose final name as "baseName\nstatus" if status exists.
         let finalName = newName;
         if (session.status && session.status.trim() !== "") {
           finalName += `\n${session.status}`;
@@ -891,8 +886,8 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
       }
     }
     
-    // NEW: When a verification channel is marked verified and only one member remains,
-    // move them to an open one-tap channel (or create one if needed).
+    // NEW: When a verification channel (marked verified) is left with only one member,
+    // move that member to an open one-tap channel if one exists; otherwise, create a new one-tap channel.
     for (const [channelId, session] of verificationSessions.entries()) {
       const verifChannel = guild.channels.cache.get(channelId);
       if (!verifChannel) continue;
@@ -975,7 +970,7 @@ setInterval(async () => {
 }, 2000);
 
 // ------------------------------
-// On Guild Join: Create "bot-setup" & "bot-config" Channels with Language Selection
+// On Guild Join – Create "bot-setup" & "bot-config" Channels with Language Selection
 // ------------------------------
 client.on(Events.GuildCreate, async guild => {
   try {

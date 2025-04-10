@@ -39,7 +39,7 @@ async function connectToMongo() {
 connectToMongo();
 
 // ------------------------------
-// Create Discord Client (only one declaration)
+// Create Discord Client (single declaration)
 // ------------------------------
 const client = new Client({
   intents: [
@@ -64,8 +64,7 @@ client.once(Events.ClientReady, () => {
 const setupStarted = new Map(); // Prevent duplicate setups per guild
 // verificationSessions: { channelId: { userId, verified?: boolean } }
 const verificationSessions = new Map();
-// onetapSessions: store { owner, type, rejectedUsers, baseName, status }
-// "baseName" is the channel's original name and "status" is the extra subtitle.
+// onetapSessions: { channelId: { owner, type, rejectedUsers, baseName, status } }
 const onetapSessions = new Map();
 const jailData = new Map(); // For jail/unban commands
 
@@ -236,7 +235,7 @@ const slashCommands = [
     .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
   new SlashCommandBuilder().setName('toponline').setDescription('Show top online users')
     .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
-
+  
   // Session commands (owner-only):
   new SlashCommandBuilder().setName('claim').setDescription('Claim an abandoned session'),
   new SlashCommandBuilder().setName('mute').setDescription('Mute a user in your session')
@@ -260,12 +259,12 @@ const slashCommands = [
   new SlashCommandBuilder().setName('status').setDescription('Set a status for your session (displayed under the base name)')
     .addStringOption(o => o.setName('text').setDescription('Status text').setRequired(true)),
   new SlashCommandBuilder().setName('help').setDescription('Show available commands'),
-
+  
   // Verification commands (restricted to verificators/admins):
   new SlashCommandBuilder().setName('boy').setDescription('Verify as Boy (verificators only)'),
   new SlashCommandBuilder().setName('girl').setDescription('Verify as Girl (verificators only)'),
-
-  // Admin command:
+  
+  // Admin command: /aji
   new SlashCommandBuilder().setName('aji')
     .setDescription('Move a tagged user to your current voice channel (admin only)')
     .addUserOption(o => o.setName('target').setDescription('User to move').setRequired(true))
@@ -290,6 +289,16 @@ const slashCommands = [
 // Interaction Handler for Buttons & Slash Commands
 // ------------------------------
 client.on('interactionCreate', async interaction => {
+  // --- HANDLE LANGUAGE BUTTONS ---
+  if (interaction.isButton() && interaction.customId.startsWith("lang_")) {
+    const chosenLang = interaction.customId.split("_")[1]; // e.g., "english"
+    // OPTIONALLY update DB: store chosenLang for the guild here.
+    const embed = new EmbedBuilder()
+      .setColor(0xFFEB3B)
+      .setDescription(`✅ Language has been set to **${chosenLang}**! Now type "ready" to begin setup.`);
+    return interaction.reply({ embeds: [embed], ephemeral: true });
+  }
+  
   if (interaction.isButton()) {
     // "Join Help" Button
     if (interaction.customId.startsWith("join_help_")) {
@@ -359,7 +368,7 @@ client.on('interactionCreate', async interaction => {
       }
     }
     
-    // Profile Buttons: "Avatar" or "Banner"
+    // Profile Buttons: "Avatar" and "Banner"
     if (interaction.customId.startsWith("avatar_") || interaction.customId.startsWith("banner_")) {
       const [action, userId] = interaction.customId.split('_');
       try {
@@ -385,7 +394,7 @@ client.on('interactionCreate', async interaction => {
         return interaction.reply({ content: "Error fetching user data.", ephemeral: true });
       }
     }
-    return;
+    return; // End button interaction handling
   }
   
   if (!interaction.isChatInputCommand()) return;
@@ -395,7 +404,7 @@ client.on('interactionCreate', async interaction => {
   
   const { commandName } = interaction;
   
-  // Global Admin Commands (restricted by default permissions)
+  // Global Admin Commands
   const globalCmds = ["setprefix", "setwelcome", "showwelcome", "jail", "jinfo", "unban", "binfo", "topvrf", "toponline"];
   if (globalCmds.includes(commandName)) {
     // [Global command logic if needed]
@@ -444,8 +453,7 @@ client.on('interactionCreate', async interaction => {
           await logsChannel.send({ embeds: [logEmbed] });
         }
       }
-      
-      // Mark verified – later in voiceStateUpdate, the verified user will be moved.
+      // Mark as verified so voiceStateUpdate will move the user later.
       verificationSessions.set(vc.id, { userId: sessionData.userId, verified: true });
     } catch (err) {
       console.error("Verification error:", err);
@@ -476,7 +484,7 @@ client.on('interactionCreate', async interaction => {
     }
   }
   
-  // Session (One-Tap) Commands – Owner-only commands.
+  // Session (One-Tap) Commands – must be in a session channel that exists in onetapSessions.
   const sessionCommands = ["claim", "mute", "unmute", "lock", "unlock", "limit", "reject", "perm", "hide", "unhide", "transfer", "name", "status"];
   if (sessionCommands.includes(commandName)) {
     const voiceChannel = interaction.member.voice.channel;
@@ -487,7 +495,7 @@ client.on('interactionCreate', async interaction => {
       return interaction.reply({ embeds: [embed], ephemeral: true });
     }
     let session = onetapSessions.get(voiceChannel.id);
-    // /claim: allow claiming if the old owner is not in the channel.
+    // /claim: allow claiming if the current owner is not in the channel.
     if (commandName === "claim") {
       if (!voiceChannel.members.has(session.owner)) {
         session.owner = interaction.user.id;
@@ -503,7 +511,7 @@ client.on('interactionCreate', async interaction => {
         return interaction.reply({ embeds: [embed], ephemeral: true });
       }
     }
-    // For all other commands, ensure the issuer is the owner.
+    // For other commands, ensure the issuer is the session owner.
     if (session.owner !== interaction.user.id) {
       const embed = new EmbedBuilder()
         .setColor(0xFFEB3B)
@@ -535,8 +543,7 @@ client.on('interactionCreate', async interaction => {
         break;
       }
       case "lock": {
-        // Lock channel from new joins by denying Connect permission to @everyone,
-        // but then explicitly ensure the session owner has permission.
+        // Lock channel: deny Connect for @everyone, but allow the owner.
         await voiceChannel.permissionOverwrites.edit(interaction.guild.id, { Connect: false });
         await voiceChannel.permissionOverwrites.edit(session.owner, { Connect: true });
         responseText = `✅ ${interaction.member}, your session has been locked!`;
@@ -589,14 +596,14 @@ client.on('interactionCreate', async interaction => {
       case "name": {
         const newName = interaction.options.getString("text");
         session.baseName = newName;
-        // Combine baseName and status with a newline (if status exists)
+        // Combine baseName and status with a newline if status exists.
         let finalName = newName;
         if (session.status && session.status.trim() !== "") {
           finalName += `\n${session.status}`;
         }
         try {
           await voiceChannel.setName(finalName);
-          responseText = `✅ ${interaction.member}, your session has been renamed:\n**${newName}**`;
+          responseText = `✅ ${interaction.member}, your session has been renamed to:\n**${newName}**`;
         } catch (err) {
           responseText = `⚠️ ${interaction.member}, failed to rename your session.`;
         }
@@ -606,7 +613,6 @@ client.on('interactionCreate', async interaction => {
         const newStatus = interaction.options.getString("text");
         session.status = newStatus;
         let base = session.baseName || voiceChannel.name;
-        // Remove any previous newline part if exists.
         if (base.includes("\n")) {
           base = base.split("\n")[0];
         }
@@ -616,7 +622,7 @@ client.on('interactionCreate', async interaction => {
         }
         try {
           await voiceChannel.setName(finalName);
-          responseText = `✅ ${interaction.member}, your channel status has been updated to:\n**${newStatus}**`;
+          responseText = `✅ ${interaction.member}, your channel's status has been updated to:\n**${newStatus}**`;
         } catch (err) {
           responseText = `⚠️ ${interaction.member}, failed to update your session status.`;
         }
@@ -712,7 +718,7 @@ client.on(Events.GuildCreate, async guild => {
     await guild.channels.create({
       name: 'bot-config',
       type: 0,
-      topic: 'Use slash commands for configuration (e.g., /setprefix, /setwelcome, etc.)',
+      topic: 'Use slash commands for configuration (e.g. /setprefix, /setwelcome, etc.)',
       permissionOverwrites: [
         { id: guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
         { id: owner.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] }

@@ -4,12 +4,9 @@
 // /aji and Notifications
 //
 // THIS VERSION FIXES THE JAIL SYSTEM, UPDATES THE NEED-HELP NOTIFICATIONS,
-// ADDS /setwelcome AND /showwelcome FUNCTIONALITY, REMOVES THE /setprefix AND 
-// ONE-TAP TEXT CHANNEL / WELCOME EMBED FUNCTIONALITY.
-// NOW, WHEN A MEMBER JOINS THE BASE ONE-TAP, NEED-HELP, OR VERIFICATION CHANNEL,
-// THE BOT ALWAYS CREATES AN EPHEMERAL VOICE CHANNEL (USING THE BASE CHANNEL'S PARENT, IF ANY),
-// MOVES THE MEMBER THERE, AND (FOR ONE-TAP) SENDS A DM REMINDER.
-// (All other functionality remains the same.)
+// ADDS /setwelcome, /showwelcome, AND NOW ASKS FOR A "Jail Log Channel ID" DURING SETUP.
+// If provided, jail and unjail actions post log embeds to that channel.
+// It also removes the /setprefix command and implements the rest of your features unchanged.
 //
 require('dotenv').config();
 const {
@@ -95,7 +92,8 @@ const languagePrompts = {
     verificationLogChannelId: "🔹 **# Provide the Verification Log Channel ID** (or type `none`)",
     needHelpChannelId: "🔹 **# Provide the Need Help Channel ID**",
     helperRoleId: "🔹 **# Provide the Helper Role ID**",
-    needHelpLogChannelId: "🔹 **# Provide the Need Help Log Channel ID** (or type `none`)"
+    needHelpLogChannelId: "🔹 **# Provide the Need Help Log Channel ID** (or type `none`)",
+    jailLogChannelId: "🔹 **# Provide the Jail Log Channel ID** (or type `none`)"
   },
   darija: {
     verifiedRoleId: "🔹 **3tini l'ID dial Verified Boy Role**",
@@ -110,7 +108,8 @@ const languagePrompts = {
     verificationLogChannelId: "🔹 **3tini l'ID dial Verification logs** (awla la ma3endeksh kteb `none`)",
     needHelpChannelId: "🔹 **3tini l'ID dial Need Help channel**",
     helperRoleId: "🔹 **3tini l'ID dial Helper Role**",
-    needHelpLogChannelId: "🔹 **3tini l'ID dial Need Help logs** (awla `none`)"
+    needHelpLogChannelId: "🔹 **3tini l'ID dial Need Help logs** (awla `none`)",
+    jailLogChannelId: "🔹 **3tini l'ID dial Jail Log Channel** (awla `none`)"
   },
   spanish: {
     verifiedRoleId: "🔹 **# Proporciona el ID del rol Verified Boy**",
@@ -125,7 +124,8 @@ const languagePrompts = {
     verificationLogChannelId: "🔹 **# Proporciona el ID del canal de logs de verificación** (o escribe `none`)",
     needHelpChannelId: "🔹 **# Proporciona el ID del canal Need Help**",
     helperRoleId: "🔹 **# Proporciona el ID del rol Helper**",
-    needHelpLogChannelId: "🔹 **# Proporciona el ID del canal de logs Need Help** (o escribe `none`)"
+    needHelpLogChannelId: "🔹 **# Proporciona el ID del canal de logs Need Help** (o escribe `none`)",
+    jailLogChannelId: "🔹 **# Proporciona el ID del canal de logs de Jail** (o escribe `none`)"
   },
   russian: {
     verifiedRoleId: "🔹 **# Укажите ID роли для подтверждённого парня**",
@@ -140,7 +140,8 @@ const languagePrompts = {
     verificationLogChannelId: "🔹 **# Укажите ID канала логов проверки** (или напишите `none`)",
     needHelpChannelId: "🔹 **# Укажите ID канала Need Help**",
     helperRoleId: "🔹 **# Укажите ID роли для помощника**",
-    needHelpLogChannelId: "🔹 **# Укажите ID канала логов Need Help** (или напишите `none`)"
+    needHelpLogChannelId: "🔹 **# Укажите ID канала логов Need Help** (или напишите `none`)",
+    jailLogChannelId: "🔹 **# Укажите ID канала логов Jail** (или напишите `none`)"
   },
   french: {
     verifiedRoleId: "🔹 **# Fournissez l'ID du rôle Verified Boy**",
@@ -155,7 +156,8 @@ const languagePrompts = {
     verificationLogChannelId: "🔹 **# Fournissez l'ID du canal de logs de vérification** (ou tapez `none`)",
     needHelpChannelId: "🔹 **# Fournissez l'ID du canal Need Help**",
     helperRoleId: "🔹 **# Fournissez l'ID du rôle Helper**",
-    needHelpLogChannelId: "🔹 **# Fournissez l'ID du canal de logs Need Help** (ou tapez `none`)"
+    needHelpLogChannelId: "🔹 **# Fournissez l'ID du canal de logs Need Help** (ou tapez `none`)",
+    jailLogChannelId: "🔹 **# Fournissez l'ID du canal de logs de Jail** (ou tapez `none`)"
   }
 };
 
@@ -481,6 +483,23 @@ client.on('interactionCreate', async interaction => {
       } catch (dmErr) {
         console.log("Could not DM the user (DMs disabled).");
       }
+      // Send jail log embed to Jail Log Channel if set.
+      if (config.jailLogChannelId && config.jailLogChannelId !== "none") {
+        const jailLogChannel = interaction.guild.channels.cache.get(config.jailLogChannelId);
+        if (jailLogChannel) {
+          const logEmbed = new EmbedBuilder()
+            .setColor(0xff0000)
+            .setTitle("Jail Action")
+            .addFields(
+              { name: "User", value: `<@${targetId}>`, inline: true },
+              { name: "Jailed By", value: `<@${interaction.user.id}>`, inline: true },
+              { name: "Reason", value: reason, inline: false }
+            )
+            .setTimestamp()
+            .setFooter({ text: `${interaction.guild.name}` });
+          jailLogChannel.send({ embeds: [logEmbed] });
+        }
+      }
       const embed = new EmbedBuilder()
         .setColor(0xFFEB3B)
         .setDescription(`✅ ${interaction.member} jailed <@${targetId}>.\nReason: ${reason}`);
@@ -507,6 +526,22 @@ client.on('interactionCreate', async interaction => {
         if (unverifiedRole) await targetMember.roles.add(unverifiedRole);
       }
       jailData.delete(targetMember.id);
+      // Send unjail log embed if jailLogChannel is set.
+      if (config.jailLogChannelId && config.jailLogChannelId !== "none") {
+        const jailLogChannel = interaction.guild.channels.cache.get(config.jailLogChannelId);
+        if (jailLogChannel) {
+          const logEmbed = new EmbedBuilder()
+            .setColor(0x00ff00)
+            .setTitle("Unjail Action")
+            .addFields(
+              { name: "User", value: `<@${targetId}>`, inline: true },
+              { name: "Unjailed By", value: `<@${interaction.user.id}>`, inline: true }
+            )
+            .setTimestamp()
+            .setFooter({ text: `${interaction.guild.name}` });
+          jailLogChannel.send({ embeds: [logEmbed] });
+        }
+      }
       const embed = new EmbedBuilder()
         .setColor(0xFFEB3B)
         .setDescription(`✅ ${interaction.member} unjailed <@${targetId}>. The unverified role has been assigned so they can rejoin verification.`);
@@ -868,7 +903,10 @@ client.on('messageCreate', async message => {
       console.error(e);
       return;
     }
-    if (message.author.id !== owner.id) return;
+    // Allow owner or admin to type "ready"
+    const member = message.guild.members.cache.get(message.author.id);
+    const isAdmin = member?.permissions.has(PermissionsBitField.Flags.Administrator);
+    if (!isAdmin && message.author.id !== owner.id) return;
     if (message.content.trim().toLowerCase() === 'ready') {
       if (setupStarted.get(message.guild.id)) return;
       setupStarted.set(message.guild.id, true);
@@ -925,7 +963,7 @@ client.on(Events.GuildCreate, async guild => {
       banLogChannel = await guild.channels.create({
         name: "📥・banned-members",
         type: ChannelType.GuildText,
-        topic: "Logs of banned members. Read-only for admins and the owner.",
+        topic: "Logs of banned members. Read-only for admins and the Owner.",
         permissionOverwrites: [
           { id: guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
           { id: owner.id, allow: [PermissionsBitField.Flags.ViewChannel] },
@@ -951,7 +989,7 @@ client.on(Events.GuildCreate, async guild => {
 });
 
 // ------------------------------
-// Auto-assign Unverified Role on Member Join & Send Welcome DM (using cache to prevent duplicates)
+// Auto-assign Unverified Role on Member Join & Send Welcome DM (using cache)
 // ------------------------------
 client.on(Events.GuildMemberAdd, async member => {
   if (welcomeSent.has(member.id)) return;
@@ -1215,7 +1253,10 @@ client.on('messageCreate', async message => {
       console.error(e);
       return;
     }
-    if (message.author.id !== owner.id) return;
+    // Allow owner or admin to run setup.
+    const member = message.guild.members.cache.get(message.author.id);
+    const isAdmin = member?.permissions.has(PermissionsBitField.Flags.Administrator);
+    if (!isAdmin && message.author.id !== owner.id) return;
     if (message.content.trim().toLowerCase() === 'ready') {
       if (setupStarted.get(message.guild.id)) return;
       setupStarted.set(message.guild.id, true);
@@ -1272,7 +1313,7 @@ client.on(Events.GuildCreate, async guild => {
       banLogChannel = await guild.channels.create({
         name: "📥・banned-members",
         type: ChannelType.GuildText,
-        topic: "Logs of banned members. Read-only for admins and the owner.",
+        topic: "Logs of banned members. Only visible to Admins and the Owner.",
         permissionOverwrites: [
           { id: guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
           { id: owner.id, allow: [PermissionsBitField.Flags.ViewChannel] },
@@ -1298,7 +1339,7 @@ client.on(Events.GuildCreate, async guild => {
 });
 
 // ------------------------------
-// Auto-assign Unverified Role on Member Join & Send Welcome DM
+// Auto-assign Unverified Role on Member Join & Send Welcome DM (using cache)
 // ------------------------------
 client.on(Events.GuildMemberAdd, async member => {
   if (welcomeSent.has(member.id)) return;

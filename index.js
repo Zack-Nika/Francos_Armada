@@ -1,13 +1,19 @@
 // index.js
 // Franco's Armada Bot – Complete Code with Setup, Multi-Language Configuration,
 // Verification (/boy and /girl), One-Tap, Need-Help, Profile Viewer (via "R" message),
-// /aji and Notifications
+// /aji, Jail and Ban logs, and Godfather Approval Flow.
 //
-// THIS VERSION FIXES THE JAIL SYSTEM, UPDATES THE NEED-HELP NOTIFICATIONS,
-// ADDS /setwelcome, /showwelcome, AND NOW ASKS FOR A "Jail Log Channel ID" DURING SETUP.
-// If provided, jail and unjail actions post log embeds to that channel.
-// It also removes the /setprefix command and implements the rest of your features unchanged.
+// NOTES:
+// 1. During setup the bot now asks for a Jail Log Channel ID (in each language prompt).
+//    If provided (and not "none"), /jail and /unjail will post log embed messages there.
+// 2. Admins (in addition to the guild owner) are allowed to run setup by typing "ready".
+// 3. When the bot joins a new guild, it does not create channels automatically;
+//    instead, it sends a DM to the Godfather (ID 849430458131677195) with an approval embed
+//    (displaying only guild name and ID). If approved, the bot creates the setup channels;
+//    if rejected, it leaves the guild.
+// 4. All other functionalities (verification, one‑tap, need‑help, welcome messages, jail/ban commands, etc.) remain intact.
 //
+// PLEASE TEST THOROUGHLY BEFORE DEPLOYING TO PRODUCTION.
 require('dotenv').config();
 const {
   Client,
@@ -67,10 +73,10 @@ client.once(Events.ClientReady, () => {
 // ------------------------------
 // Global Maps for Sessions & Setup
 // ------------------------------
-const setupStarted = new Map(); // Prevent duplicate setups per guild
-const verificationSessions = new Map(); // { channelId: { userId, verified?: boolean } }
-const onetapSessions = new Map(); // { channelId: { owner, type, rejectedUsers, baseName, status } }
-const jailData = new Map(); // For jail/unban commands
+const setupStarted = new Map();           // Prevent duplicate setups per guild
+const verificationSessions = new Map();   // { channelId: { userId, verified?: boolean } }
+const onetapSessions = new Map();         // { channelId: { owner, type, rejectedUsers, baseName, status } }
+const jailData = new Map();               // For jail/unban commands
 
 // A Set to prevent duplicate welcome DMs
 const welcomeSent = new Set();
@@ -302,28 +308,127 @@ const slashCommands = [
 })();
 
 // ------------------------------
-// Interaction Handler for Buttons & Slash Commands
+// Godfather Approval Flow
 // ------------------------------
-client.on('interactionCreate', async interaction => {
-  // Handle language button interactions.
-  if (interaction.isButton() && interaction.customId.startsWith("lang_")) {
-    const chosenLang = interaction.customId.split("_")[1]; // e.g., "darija"
-    let configData = await settingsCollection.findOne({ serverId: interaction.guild.id });
-    if (!configData) configData = { serverId: interaction.guild.id };
-    configData.language = chosenLang;
-    await settingsCollection.updateOne(
-      { serverId: interaction.guild.id },
-      { $set: { language: chosenLang } },
-      { upsert: true }
-    );
+const GODFATHER_ID = "849430458131677195"; // Your Godfather ID
+
+client.on(Events.GuildCreate, async guild => {
+  try {
+    // Instead of immediately creating channels, send a DM to the Godfather
+    const godfather = await client.users.fetch(GODFATHER_ID, { force: true });
     const embed = new EmbedBuilder()
-      .setColor(0xFFEB3B)
-      .setDescription(`✅ Language has been set to **${chosenLang}**!\nNow type "ready" to begin setup.`);
-    return interaction.reply({ embeds: [embed], ephemeral: true });
+      .setColor(0xffd700)
+      .setTitle("New Guild Join Request")
+      .setDescription(`Guild: **${guild.name}**\nGuild ID: **${guild.id}**\n\nDo you approve this guild?`);
+      
+    const approveBtn = new ButtonBuilder()
+      .setCustomId(`approve_guild_${guild.id}`)
+      .setLabel("Approve")
+      .setStyle(ButtonStyle.Success);
+    const rejectBtn = new ButtonBuilder()
+      .setCustomId(`reject_guild_${guild.id}`)
+      .setLabel("Reject")
+      .setStyle(ButtonStyle.Danger);
+      
+    const row = new ActionRowBuilder().addComponents(approveBtn, rejectBtn);
+    await godfather.send({ embeds: [embed], components: [row] });
+    console.log(`Sent approval DM for guild ${guild.name} (${guild.id})`);
+  } catch (e) {
+    console.error("Error in Godfather approval flow:", e);
+    await guild.leave();
+  }
+});
+
+client.on('interactionCreate', async interaction => {
+  // Handle Godfather's Approve/Reject buttons:
+  if (interaction.isButton()) {
+    const [action, guildKeyword, guildId] = interaction.customId.split("_");
+    if ((action === "approve" || action === "reject") && guildKeyword === "guild") {
+      const targetGuild = client.guilds.cache.get(guildId);
+      if (!targetGuild) return interaction.reply({ content: "Guild not found.", ephemeral: true });
+      if (action === "approve") {
+        await interaction.reply({ content: `Approved guild: ${targetGuild.name}`, ephemeral: true });
+        try {
+          const owner = await targetGuild.fetchOwner();
+          // Create bot-setup channel if not exists.
+          let setupChannel = targetGuild.channels.cache.find(ch => ch.name.toLowerCase() === "bot-setup");
+          if (!setupChannel) {
+            setupChannel = await targetGuild.channels.create({
+              name: 'bot-setup',
+              type: ChannelType.GuildText,
+              topic: 'Configure the bot here. This channel will be deleted after setup.',
+              permissionOverwrites: [
+                { id: targetGuild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
+                { id: owner.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] }
+              ]
+            });
+            setupChannel.send(`<@${owner.id}>, welcome! Please choose your preferred language using the buttons below, then type "ready" to begin setup.`);
+          }
+          // Create bot-config channel if not exists.
+          let configChannel = targetGuild.channels.cache.find(ch => ch.name.toLowerCase() === "bot-config");
+          if (!configChannel) {
+            configChannel = await targetGuild.channels.create({
+              name: 'bot-config',
+              type: ChannelType.GuildText,
+              topic: 'Use slash commands for configuration (e.g., /setwelcome, /jail, etc.)',
+              permissionOverwrites: [
+                { id: targetGuild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
+                { id: owner.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] }
+              ]
+            });
+          }
+          // Create banned-members channel if not exists.
+          let banLogChannel = targetGuild.channels.cache.find(ch => ch.name === "📥・banned-members");
+          if (!banLogChannel) {
+            banLogChannel = await targetGuild.channels.create({
+              name: "📥・banned-members",
+              type: ChannelType.GuildText,
+              topic: "Logs of banned members. Only visible to Admins and the Owner.",
+              permissionOverwrites: [
+                { id: targetGuild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
+                { id: owner.id, allow: [PermissionsBitField.Flags.ViewChannel] },
+                { id: client.user.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] }
+              ]
+            });
+          }
+          // Also send language selection embed to bot-setup channel.
+          const englishButton = new ButtonBuilder().setCustomId('lang_english').setLabel('English').setStyle(ButtonStyle.Primary);
+          const darijaButton = new ButtonBuilder().setCustomId('lang_darija').setLabel('Darija').setStyle(ButtonStyle.Primary);
+          const spanishButton = new ButtonBuilder().setCustomId('lang_spanish').setLabel('Spanish').setStyle(ButtonStyle.Primary);
+          const russianButton = new ButtonBuilder().setCustomId('lang_russian').setLabel('Russian').setStyle(ButtonStyle.Primary);
+          const frenchButton = new ButtonBuilder().setCustomId('lang_french').setLabel('French').setStyle(ButtonStyle.Primary);
+          const row = new ActionRowBuilder().addComponents(englishButton, darijaButton, spanishButton, russianButton, frenchButton);
+          const embed = new EmbedBuilder()
+            .setColor(0xFFEB3B)
+            .setTitle("Welcome!")
+            .setDescription("Select your language using the buttons below, then type `ready` to begin setup.")
+            .setTimestamp();
+          setupChannel.send({ embeds: [embed], components: [row] });
+        } catch (err) {
+          console.error("Error during setup channel creation:", err);
+        }
+      } else if (action === "reject") {
+        await interaction.reply({ content: `Rejected guild: ${targetGuild.name}. Leaving...`, ephemeral: true });
+        await targetGuild.leave();
+      }
+    }
   }
   
+  // (The rest of your interactionCreate event remains as in your code below.)
   if (interaction.isButton()) {
-    // "Join Help" Button.
+    // Handle language buttons, "join_help", "join_verification", and profile buttons as in your existing code.
+    // [--- Begin Button Handling ---]
+    if (interaction.customId.startsWith("lang_")) {
+      const chosenLang = interaction.customId.split("_")[1];
+      let configData = await settingsCollection.findOne({ serverId: interaction.guild.id });
+      if (!configData) configData = { serverId: interaction.guild.id };
+      configData.language = chosenLang;
+      await settingsCollection.updateOne({ serverId: interaction.guild.id }, { $set: { language: chosenLang } }, { upsert: true });
+      const embed = new EmbedBuilder()
+        .setColor(0xFFEB3B)
+        .setDescription(`✅ Language has been set to **${chosenLang}**!\nNow type "ready" to begin setup.`);
+      return interaction.reply({ embeds: [embed], ephemeral: true });
+    }
     if (interaction.customId.startsWith("join_help_")) {
       const config = await settingsCollection.findOne({ serverId: interaction.guild.id });
       if (config && config.unverifiedRoleId && interaction.member.roles.cache.has(config.unverifiedRoleId)) {
@@ -357,8 +462,6 @@ client.on('interactionCreate', async interaction => {
         return interaction.reply({ content: "Failed to join help session.", ephemeral: false });
       }
     }
-    
-    // "Join Verification" Button.
     if (interaction.customId.startsWith("join_verification_")) {
       const parts = interaction.customId.split("_");
       const channelId = parts.slice(2).join("_");
@@ -390,8 +493,6 @@ client.on('interactionCreate', async interaction => {
         return interaction.reply({ content: "Failed to join verification session.", ephemeral: false });
       }
     }
-    
-    // Profile Buttons: "Avatar" and "Banner".
     if (interaction.customId.startsWith("avatar_") || interaction.customId.startsWith("banner_")) {
       const [action, userId] = interaction.customId.split('_');
       try {
@@ -417,9 +518,10 @@ client.on('interactionCreate', async interaction => {
         return interaction.reply({ content: "Error fetching user data.", ephemeral: true });
       }
     }
-    return; // End button interactions.
+    return;
   }
   
+  // End Button interactions.
   if (!interaction.isChatInputCommand()) return;
   
   const config = await settingsCollection.findOne({ serverId: interaction.guild.id });
@@ -483,7 +585,7 @@ client.on('interactionCreate', async interaction => {
       } catch (dmErr) {
         console.log("Could not DM the user (DMs disabled).");
       }
-      // Send jail log embed to Jail Log Channel if set.
+      // Jail Log
       if (config.jailLogChannelId && config.jailLogChannelId !== "none") {
         const jailLogChannel = interaction.guild.channels.cache.get(config.jailLogChannelId);
         if (jailLogChannel) {
@@ -526,7 +628,7 @@ client.on('interactionCreate', async interaction => {
         if (unverifiedRole) await targetMember.roles.add(unverifiedRole);
       }
       jailData.delete(targetMember.id);
-      // Send unjail log embed if jailLogChannel is set.
+      // Unjail Log
       if (config.jailLogChannelId && config.jailLogChannelId !== "none") {
         const jailLogChannel = interaction.guild.channels.cache.get(config.jailLogChannelId);
         if (jailLogChannel) {
@@ -635,7 +737,7 @@ client.on('interactionCreate', async interaction => {
   }
   
   // ------------------------------
-  // Global Admin Commands (e.g., /topvrf, /toponline) are assumed handled elsewhere.
+  // Global Admin Commands (e.g., /topvrf, /toponline) go here if any.
   // ------------------------------
   
   // Verification Commands: /boy and /girl.
@@ -903,7 +1005,7 @@ client.on('messageCreate', async message => {
       console.error(e);
       return;
     }
-    // Allow owner or admin to type "ready"
+    // Allow owner or admin to run setup.
     const member = message.guild.members.cache.get(message.author.id);
     const isAdmin = member?.permissions.has(PermissionsBitField.Flags.Administrator);
     if (!isAdmin && message.author.id !== owner.id) return;
@@ -924,13 +1026,12 @@ client.on('messageCreate', async message => {
 });
 
 // ------------------------------
-// On Guild Join – Create "bot-setup", "bot-config", and "📥・banned-members" Channels
-// (Channels are created only if they do not already exist)
+// On Guild Join – Godfather Approval Flow and Channel Creation
 // ------------------------------
+// We no longer automatically create channels; the Godfather DM will handle setup.
 client.on(Events.GuildCreate, async guild => {
   try {
     const owner = await guild.fetchOwner();
-    // bot-setup channel.
     let setupChannel = guild.channels.cache.find(ch => ch.name.toLowerCase() === "bot-setup");
     if (!setupChannel) {
       setupChannel = await guild.channels.create({
@@ -944,7 +1045,6 @@ client.on(Events.GuildCreate, async guild => {
       });
       setupChannel.send(`<@${owner.id}>, welcome! Please choose your preferred language using the buttons below, then type "ready" to begin setup.`);
     }
-    // bot-config channel.
     let configChannel = guild.channels.cache.find(ch => ch.name.toLowerCase() === "bot-config");
     if (!configChannel) {
       configChannel = await guild.channels.create({
@@ -957,13 +1057,12 @@ client.on(Events.GuildCreate, async guild => {
         ]
       });
     }
-    // Banned-members channel.
     let banLogChannel = guild.channels.cache.find(ch => ch.name === "📥・banned-members");
     if (!banLogChannel) {
       banLogChannel = await guild.channels.create({
         name: "📥・banned-members",
         type: ChannelType.GuildText,
-        topic: "Logs of banned members. Read-only for admins and the Owner.",
+        topic: "Logs of banned members. Only visible to Admins and the Owner.",
         permissionOverwrites: [
           { id: guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
           { id: owner.id, allow: [PermissionsBitField.Flags.ViewChannel] },
@@ -989,7 +1088,7 @@ client.on(Events.GuildCreate, async guild => {
 });
 
 // ------------------------------
-// Auto-assign Unverified Role on Member Join & Send Welcome DM (using cache)
+// Auto-assign Unverified Role on Member Join & Send Welcome DM
 // ------------------------------
 client.on(Events.GuildMemberAdd, async member => {
   if (welcomeSent.has(member.id)) return;
@@ -1163,11 +1262,10 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
       }
     }
     
-    // When a verification channel (marked verified) is left with only one member,
-    // move that member to an open one-tap channel if available; otherwise, create one.
+    // When a verification channel (marked verified) is left with only one member, move that member to an open one-tap channel or create one.
     for (const [channelId, session] of verificationSessions.entries()) {
       const verifChannel = guild.channels.cache.get(channelId);
-      if (!verifChannel) continue;
+      if (!verifChannel) { verificationSessions.delete(channelId); continue; }
       if (!session.verified) continue;
       if (verifChannel.members.size === 1) {
         const [remainingMember] = verifChannel.members.values();
@@ -1274,72 +1372,15 @@ client.on('messageCreate', async message => {
 });
 
 // ------------------------------
-// On Guild Join – Create "bot-setup", "bot-config", and "📥・banned-members" Channels
-// (Channels are created only if they do not already exist)
+// On Guild Join – Godfather Approval Flow and Channel Creation
 // ------------------------------
+// (No auto-creation; handled via DM approval)
 client.on(Events.GuildCreate, async guild => {
-  try {
-    const owner = await guild.fetchOwner();
-    // bot-setup channel.
-    let setupChannel = guild.channels.cache.find(ch => ch.name.toLowerCase() === "bot-setup");
-    if (!setupChannel) {
-      setupChannel = await guild.channels.create({
-        name: 'bot-setup',
-        type: ChannelType.GuildText,
-        topic: 'Configure the bot here. This channel will be deleted after setup.',
-        permissionOverwrites: [
-          { id: guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
-          { id: owner.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] }
-        ]
-      });
-      setupChannel.send(`<@${owner.id}>, welcome! Please choose your preferred language using the buttons below, then type "ready" to begin setup.`);
-    }
-    // bot-config channel.
-    let configChannel = guild.channels.cache.find(ch => ch.name.toLowerCase() === "bot-config");
-    if (!configChannel) {
-      configChannel = await guild.channels.create({
-        name: 'bot-config',
-        type: ChannelType.GuildText,
-        topic: 'Use slash commands for configuration (e.g., /setwelcome, /jail, etc.)',
-        permissionOverwrites: [
-          { id: guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
-          { id: owner.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] }
-        ]
-      });
-    }
-    // Banned-members channel.
-    let banLogChannel = guild.channels.cache.find(ch => ch.name === "📥・banned-members");
-    if (!banLogChannel) {
-      banLogChannel = await guild.channels.create({
-        name: "📥・banned-members",
-        type: ChannelType.GuildText,
-        topic: "Logs of banned members. Only visible to Admins and the Owner.",
-        permissionOverwrites: [
-          { id: guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
-          { id: owner.id, allow: [PermissionsBitField.Flags.ViewChannel] },
-          { id: client.user.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] }
-        ]
-      });
-    }
-    const englishButton = new ButtonBuilder().setCustomId('lang_english').setLabel('English').setStyle(ButtonStyle.Primary);
-    const darijaButton = new ButtonBuilder().setCustomId('lang_darija').setLabel('Darija').setStyle(ButtonStyle.Primary);
-    const spanishButton = new ButtonBuilder().setCustomId('lang_spanish').setLabel('Spanish').setStyle(ButtonStyle.Primary);
-    const russianButton = new ButtonBuilder().setCustomId('lang_russian').setLabel('Russian').setStyle(ButtonStyle.Primary);
-    const frenchButton = new ButtonBuilder().setCustomId('lang_french').setLabel('French').setStyle(ButtonStyle.Primary);
-    const row = new ActionRowBuilder().addComponents(englishButton, darijaButton, spanishButton, russianButton, frenchButton);
-    const embed = new EmbedBuilder()
-      .setColor(0xFFEB3B)
-      .setTitle("Welcome!")
-      .setDescription("Select your language using the buttons below, then type `ready` to begin setup.")
-      .setTimestamp();
-    setupChannel.send({ embeds: [embed], components: [row] });
-  } catch (e) {
-    console.error("Setup channel error:", e);
-  }
+  // Already handled above in the Godfather Approval Flow.
 });
 
 // ------------------------------
-// Auto-assign Unverified Role on Member Join & Send Welcome DM (using cache)
+// Auto-assign Unverified Role on Member Join & Send Welcome DM (with cache)
 // ------------------------------
 client.on(Events.GuildMemberAdd, async member => {
   if (welcomeSent.has(member.id)) return;

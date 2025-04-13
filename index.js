@@ -1,19 +1,18 @@
 // index.js
 // Franco's Armada Bot – Complete Code with Setup, Multi-Language Configuration,
 // Verification (/boy and /girl), One-Tap, Need-Help, Profile Viewer (via "R" message),
-// /aji, Jail and Ban logs, and Godfather Approval Flow.
+// /aji, Jail/Ban logs, and Godfather Approval Flow.
 //
-// NOTES:
-// 1. During setup the bot now asks for a Jail Log Channel ID (in each language prompt).
-//    If provided (and not "none"), /jail and /unjail will post log embed messages there.
-// 2. Admins (in addition to the guild owner) are allowed to run setup by typing "ready".
-// 3. When the bot joins a new guild, it does not create channels automatically;
-//    instead, it sends a DM to the Godfather (ID 849430458131677195) with an approval embed
-//    (displaying only guild name and ID). If approved, the bot creates the setup channels;
-//    if rejected, it leaves the guild.
-// 4. All other functionalities (verification, one‑tap, need‑help, welcome messages, jail/ban commands, etc.) remain intact.
+// CHANGE: When the bot joins a new guild it does nothing until it is approved by the Godfather.
+// The bot sends a DM to the Godfather (ID 849430458131677195) with an embed showing:
+//   • Guild Name, ID
+//   • Guild Owner's username and ID
+//   • The join timestamp (“Invited At”)
+//   • A placeholder for “Invited by” (set as “Unknown”)
+// Two buttons (“Approve” and “Reject”) are provided. Only upon approval will the bot create
+// the configuration channels (bot-setup, bot-config, 📥・banned-members), otherwise it leaves.
 //
-// PLEASE TEST THOROUGHLY BEFORE DEPLOYING TO PRODUCTION.
+// All other functionality remains unchanged.
 require('dotenv').config();
 const {
   Client,
@@ -314,12 +313,18 @@ const GODFATHER_ID = "849430458131677195"; // Your Godfather ID
 
 client.on(Events.GuildCreate, async guild => {
   try {
-    // Instead of immediately creating channels, send a DM to the Godfather
+    // Gather details for the approval embed.
+    const owner = await guild.fetchOwner();
+    const joinedAt = new Date().toLocaleString();
+    // "Invited By" is not directly available via Discord's API;
+    // we set it to "Unknown" (or you could add invite tracking later).
+    const inviter = "Unknown";
+    
     const godfather = await client.users.fetch(GODFATHER_ID, { force: true });
     const embed = new EmbedBuilder()
       .setColor(0xffd700)
       .setTitle("New Guild Join Request")
-      .setDescription(`Guild: **${guild.name}**\nGuild ID: **${guild.id}**\n\nDo you approve this guild?`);
+      .setDescription(`**Guild:** ${guild.name}\n**Guild ID:** ${guild.id}\n**Owner:** ${owner.user.tag} (${owner.id})\n**Joined At:** ${joinedAt}\n**Invited By:** ${inviter}\n\nDo you approve this guild?`);
       
     const approveBtn = new ButtonBuilder()
       .setCustomId(`approve_guild_${guild.id}`)
@@ -386,7 +391,7 @@ client.on('interactionCreate', async interaction => {
               topic: "Logs of banned members. Only visible to Admins and the Owner.",
               permissionOverwrites: [
                 { id: targetGuild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
-                { id: owner.id, allow: [PermissionsBitField.Flags.ViewChannel] },
+                { id: targetGuild.ownerId, allow: [PermissionsBitField.Flags.ViewChannel] },
                 { id: client.user.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] }
               ]
             });
@@ -414,10 +419,10 @@ client.on('interactionCreate', async interaction => {
     }
   }
   
-  // (The rest of your interactionCreate event remains as in your code below.)
+  // ------------------------------
+  // Existing Button Handlers (language, join_help, join_verification, avatar/banner)
+  // ------------------------------
   if (interaction.isButton()) {
-    // Handle language buttons, "join_help", "join_verification", and profile buttons as in your existing code.
-    // [--- Begin Button Handling ---]
     if (interaction.customId.startsWith("lang_")) {
       const chosenLang = interaction.customId.split("_")[1];
       let configData = await settingsCollection.findOne({ serverId: interaction.guild.id });
@@ -521,7 +526,7 @@ client.on('interactionCreate', async interaction => {
     return;
   }
   
-  // End Button interactions.
+  // End button interactions.
   if (!interaction.isChatInputCommand()) return;
   
   const config = await settingsCollection.findOne({ serverId: interaction.guild.id });
@@ -585,7 +590,6 @@ client.on('interactionCreate', async interaction => {
       } catch (dmErr) {
         console.log("Could not DM the user (DMs disabled).");
       }
-      // Jail Log
       if (config.jailLogChannelId && config.jailLogChannelId !== "none") {
         const jailLogChannel = interaction.guild.channels.cache.get(config.jailLogChannelId);
         if (jailLogChannel) {
@@ -628,7 +632,6 @@ client.on('interactionCreate', async interaction => {
         if (unverifiedRole) await targetMember.roles.add(unverifiedRole);
       }
       jailData.delete(targetMember.id);
-      // Unjail Log
       if (config.jailLogChannelId && config.jailLogChannelId !== "none") {
         const jailLogChannel = interaction.guild.channels.cache.get(config.jailLogChannelId);
         if (jailLogChannel) {
@@ -737,7 +740,7 @@ client.on('interactionCreate', async interaction => {
   }
   
   // ------------------------------
-  // Global Admin Commands (e.g., /topvrf, /toponline) go here if any.
+  // Global Admin Commands (e.g., /topvrf, /toponline) would go here.
   // ------------------------------
   
   // Verification Commands: /boy and /girl.
@@ -1026,69 +1029,12 @@ client.on('messageCreate', async message => {
 });
 
 // ------------------------------
-// On Guild Join – Godfather Approval Flow and Channel Creation
+// On Guild Join – Godfather Approval Flow (No auto-channel creation until approval)
 // ------------------------------
-// We no longer automatically create channels; the Godfather DM will handle setup.
-client.on(Events.GuildCreate, async guild => {
-  try {
-    const owner = await guild.fetchOwner();
-    let setupChannel = guild.channels.cache.find(ch => ch.name.toLowerCase() === "bot-setup");
-    if (!setupChannel) {
-      setupChannel = await guild.channels.create({
-        name: 'bot-setup',
-        type: ChannelType.GuildText,
-        topic: 'Configure the bot here. This channel will be deleted after setup.',
-        permissionOverwrites: [
-          { id: guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
-          { id: owner.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] }
-        ]
-      });
-      setupChannel.send(`<@${owner.id}>, welcome! Please choose your preferred language using the buttons below, then type "ready" to begin setup.`);
-    }
-    let configChannel = guild.channels.cache.find(ch => ch.name.toLowerCase() === "bot-config");
-    if (!configChannel) {
-      configChannel = await guild.channels.create({
-        name: 'bot-config',
-        type: ChannelType.GuildText,
-        topic: 'Use slash commands for configuration (e.g., /setwelcome, /jail, etc.)',
-        permissionOverwrites: [
-          { id: guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
-          { id: owner.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] }
-        ]
-      });
-    }
-    let banLogChannel = guild.channels.cache.find(ch => ch.name === "📥・banned-members");
-    if (!banLogChannel) {
-      banLogChannel = await guild.channels.create({
-        name: "📥・banned-members",
-        type: ChannelType.GuildText,
-        topic: "Logs of banned members. Only visible to Admins and the Owner.",
-        permissionOverwrites: [
-          { id: guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
-          { id: owner.id, allow: [PermissionsBitField.Flags.ViewChannel] },
-          { id: client.user.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] }
-        ]
-      });
-    }
-    const englishButton = new ButtonBuilder().setCustomId('lang_english').setLabel('English').setStyle(ButtonStyle.Primary);
-    const darijaButton = new ButtonBuilder().setCustomId('lang_darija').setLabel('Darija').setStyle(ButtonStyle.Primary);
-    const spanishButton = new ButtonBuilder().setCustomId('lang_spanish').setLabel('Spanish').setStyle(ButtonStyle.Primary);
-    const russianButton = new ButtonBuilder().setCustomId('lang_russian').setLabel('Russian').setStyle(ButtonStyle.Primary);
-    const frenchButton = new ButtonBuilder().setCustomId('lang_french').setLabel('French').setStyle(ButtonStyle.Primary);
-    const row = new ActionRowBuilder().addComponents(englishButton, darijaButton, spanishButton, russianButton, frenchButton);
-    const embed = new EmbedBuilder()
-      .setColor(0xFFEB3B)
-      .setTitle("Welcome!")
-      .setDescription("Select your language using the buttons below, then type `ready` to begin setup.")
-      .setTimestamp();
-    setupChannel.send({ embeds: [embed], components: [row] });
-  } catch (e) {
-    console.error("Setup channel error:", e);
-  }
-});
+// (All channel creation on guild join is handled only after Godfather approval in the interactionCreate handler above.)
 
 // ------------------------------
-// Auto-assign Unverified Role on Member Join & Send Welcome DM
+// Auto-assign Unverified Role on Member Join & Send Welcome DM (with cache)
 // ------------------------------
 client.on(Events.GuildMemberAdd, async member => {
   if (welcomeSent.has(member.id)) return;
@@ -1374,13 +1320,10 @@ client.on('messageCreate', async message => {
 // ------------------------------
 // On Guild Join – Godfather Approval Flow and Channel Creation
 // ------------------------------
-// (No auto-creation; handled via DM approval)
-client.on(Events.GuildCreate, async guild => {
-  // Already handled above in the Godfather Approval Flow.
-});
-
+// (Channels will be created only after Godfather approval via DM – see above.)
+  
 // ------------------------------
-// Auto-assign Unverified Role on Member Join & Send Welcome DM (with cache)
+// Auto-assign Unverified Role on Member Join & Send Welcome DM
 // ------------------------------
 client.on(Events.GuildMemberAdd, async member => {
   if (welcomeSent.has(member.id)) return;

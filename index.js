@@ -1,46 +1,14 @@
 require('dotenv').config();
 const {
-  Client, GatewayIntentBits, Partials, Collection, 
-  ChannelType, ActionRowBuilder, ButtonBuilder, 
+  Client, GatewayIntentBits, Partials, Collection,
+  ChannelType, ActionRowBuilder, ButtonBuilder,
   ButtonStyle, EmbedBuilder, Events, REST, Routes,
-  SlashCommandBuilder, PermissionsBitField 
+  SlashCommandBuilder, PermissionsBitField
 } = require('discord.js');
 const { MongoClient } = require('mongodb');
 
 // ======================
-// 1. DATABASE CONNECTION (Enhanced)
-// ======================
-const mongoUri = process.env.MONGODB_URI;
-const mongoClient = new MongoClient(mongoUri, {
-  connectTimeoutMS: 10000,
-  socketTimeoutMS: 30000,
-  serverSelectionTimeoutMS: 10000,
-  retryWrites: true,
-  retryReads: true,
-  maxPoolSize: 50
-});
-
-let settingsCollection;
-let commandStatsCollection;
-
-async function connectToMongo() {
-  try {
-    await mongoClient.connect();
-    const db = mongoClient.db("botDB");
-    settingsCollection = db.collection("serverSettings");
-    commandStatsCollection = db.collection("commandStats");
-    
-    await settingsCollection.createIndex({ serverId: 1 }, { unique: true });
-    await commandStatsCollection.createIndex({ commandName: 1 });
-    console.log("✅ MongoDB connected and indexes created");
-  } catch (err) {
-    console.error("❌ MongoDB connection failed:", err);
-    process.exit(1);
-  }
-}
-
-// ======================
-// 2. LANGUAGE SYSTEM (Your Original + Enhanced)
+// 1. COMPLETE LANGUAGE SYSTEM (ALL TRANSLATIONS)
 // ======================
 const languagePrompts = {
   english: {
@@ -76,13 +44,52 @@ const languagePrompts = {
     jailLogChannelId: "🔹 **3tini l'ID dial Jail Log Channel** (awla `none`)"
   },
   spanish: {
-    // ... (your full Spanish translations)
-  },
-  french: {
-    // ... (your full French translations) 
+    verifiedRoleId: "🔹 **# Proporciona el ID del rol Verified Boy**",
+    unverifiedRoleId: "🔹 **# Proporciona el ID del rol Unverified**",
+    verifiedGirlRoleId: "🔹 **# Proporciona el ID del rol Verified Girl**",
+    verificatorRoleId: "🔹 **# Proporciona el ID del rol Verificator**",
+    voiceVerificationChannelId: "🔹 **# Proporciona el ID del canal permanente de verificación**",
+    oneTapChannelId: "🔹 **# Proporciona el ID del canal One-Tap**",
+    verificationAlertChannelId: "🔹 **# Proporciona el ID del canal de alertas de verificación**",
+    jailRoleId: "🔹 **# Proporciona el ID del rol Jail** (o escribe `none`)",
+    voiceJailChannelId: "🔹 **# Proporciona el ID del canal de voz de Jail** (o escribe `none`)",
+    verificationLogChannelId: "🔹 **# Proporciona el ID del canal de logs de verificación** (o escribe `none`)",
+    needHelpChannelId: "🔹 **# Proporciona el ID del canal Need Help**",
+    helperRoleId: "🔹 **# Proporciona el ID del rol Helper**",
+    needHelpLogChannelId: "🔹 **# Proporciona el ID del canal de logs Need Help** (o escribe `none`)",
+    jailLogChannelId: "🔹 **# Proporciona el ID del canal de logs de Jail** (o escribe `none`)"
   },
   russian: {
-    // ... (your full Russian translations)
+    verifiedRoleId: "🔹 **# Укажите ID роли для подтверждённого парня**",
+    unverifiedRoleId: "🔹 **# Укажите ID роли для неподтверждённого пользователя**",
+    verifiedGirlRoleId: "🔹 **# Укажите ID роли для подтверждённой девочки**",
+    verificatorRoleId: "🔹 **# Укажите ID роли для проверяющего**",
+    voiceVerificationChannelId: "🔹 **# Укажите ID постоянного голосового канала проверки**",
+    oneTapChannelId: "🔹 **# Укажите ID канала One-Tap**",
+    verificationAlertChannelId: "🔹 **# Укажите ID канала уведомлений о проверке**",
+    jailRoleId: "🔹 **# Укажите ID роли для тюрьмы** (или напишите `none`)",
+    voiceJailChannelId: "🔹 **# Укажите ID голосового канала тюрьмы** (или напишите `none`)",
+    verificationLogChannelId: "🔹 **# Укажите ID канала логов проверки** (или напишите `none`)",
+    needHelpChannelId: "🔹 **# Укажите ID канала Need Help**",
+    helperRoleId: "🔹 **# Укажите ID роли для помощника**",
+    needHelpLogChannelId: "🔹 **# Укажите ID канала логов Need Help** (или напишите `none`)",
+    jailLogChannelId: "🔹 **# Укажите ID канала логов Jail** (или напишите `none`)"
+  },
+  french: {
+    verifiedRoleId: "🔹 **# Fournissez l'ID du rôle Verified Boy**",
+    unverifiedRoleId: "🔹 **# Fournissez l'ID du rôle Unverified**",
+    verifiedGirlRoleId: "🔹 **# Fournissez l'ID du rôle Verified Girl**",
+    verificatorRoleId: "🔹 **# Fournissez l'ID du rôle Verificator**",
+    voiceVerificationChannelId: "🔹 **# Fournissez l'ID du canal vocal de vérification permanent**",
+    oneTapChannelId: "🔹 **# Fournissez l'ID du canal One-Tap**",
+    verificationAlertChannelId: "🔹 **# Fournissez l'ID du canal d'alertes de vérification**",
+    jailRoleId: "🔹 **# Fournissez l'ID du rôle Jail** (ou tapez `none`)",
+    voiceJailChannelId: "🔹 **# Fournissez l'ID du canal vocal Jail** (ou tapez `none`)",
+    verificationLogChannelId: "🔹 **# Fournissez l'ID du canal de logs de vérification** (ou tapez `none`)",
+    needHelpChannelId: "🔹 **# Fournissez l'ID du canal Need Help**",
+    helperRoleId: "🔹 **# Fournissez l'ID du rôle Helper**",
+    needHelpLogChannelId: "🔹 **# Fournissez l'ID du canal de logs Need Help** (ou tapez `none`)",
+    jailLogChannelId: "🔹 **# Fournissez l'ID du canal de logs de Jail** (ou tapez `none`)"
   }
 };
 
@@ -97,25 +104,84 @@ const languageExtras = {
     notOwner: "❌ You don't own this tap",
     permSuccess: "✅ %s can now join your tap",
     rejectSuccess: "✅ %s was kicked and blocked",
-    jailSuccess: "✅ %s has been jailed"
+    jailSuccess: "✅ %s has been jailed",
+    welcomeDM: "Welcome to our server! Please verify in #verification"
   },
   darija: {
-    setupStart: "Ghanbdaw Daba Setup. Wghade ykon kolshi sahel...",
-    setupComplete: "Safi l'Bot rah m9ad 100% 🎉",
+    setupStart: "Ghanbdaw Daba Setup. Wghade ykon kolshi sahel, sift lia ghi l'ID's li ghansewlek 3lihom osafi, 7de la ykono galten se no l'bot maghykhdemsh ❌️.",
+    setupComplete: "Safi l'Bot rah m9ad 100%. Wila khasek shi haja, twasel ma3a Franco 🔱 / Username: @im_franco 🎉.",
     languageSet: "Language mseta 3la Darija",
     noVoiceChannel: "❌ Khassk tkoun fi voice channel",
-    tapOwned: "❌ Had tap 3andha sahb déja",
-    claimSuccess: "✅ Daba m3ak had tap!",
-    notOwner: "❌ Ma3andkch l7a9",
-    permSuccess: "✅ %s yemken ydkhol déba",
-    rejectSuccess: "✅ %s t7acham o msad",
-    jailSuccess: "✅ %s t7acham"
+    tapOwned: "❌ Had tap 3andha malina déja",
+    claimSuccess: "✅ Daba wliti nta mol had tap!",
+    notOwner: "❌ Ma3andkch l7a9 nta mashi mol tap",
+    permSuccess: "✅ %s Db ymkn ydkhol ltap",
+    rejectSuccess: "✅ %s Trejecta o maba9ish y9der ydkhol",
+    jailSuccess: "✅ %s Haaah Tjayla ",
+    welcomeDM: "# Marhba Bik Fi Server Dialna ! Tverifa f #verification"
+  },
+  spanish: {
+    setupStart: "Comencemos la configuración. Por favor, copia y pega cada ID según se te solicite.",
+    setupComplete: "¡Configuración completada! 🎉",
+    languageSet: "Idioma establecido en Español",
+    noVoiceChannel: "❌ Debes estar en un canal de voz",
+    tapOwned: "❌ Este canal ya tiene dueño",
+    claimSuccess: "✅ ¡Ahora eres dueño de este canal!",
+    notOwner: "❌ No eres el dueño de este canal",
+    permSuccess: "✅ %s puede unirse a tu canal",
+    rejectSuccess: "✅ %s fue expulsado y bloqueado",
+    jailSuccess: "✅ %s ha sido encarcelado",
+    welcomeDM: "¡Bienvenido a nuestro servidor! Por favor verifícate en #verificación"
+  },
+  russian: {
+    setupStart: "Давайте начнём настройку. Пожалуйста, скопируйте и вставьте каждый ID по запросу.",
+    setupComplete: "Настройка завершена! 🎉",
+    languageSet: "Язык изменён на Русский",
+    noVoiceChannel: "❌ Вы должны быть в голосовом канале",
+    tapOwned: "❌ У этого канала уже есть владелец",
+    claimSuccess: "✅ Теперь вы владелец этого канала!",
+    notOwner: "❌ Вы не владелец этого канала",
+    permSuccess: "✅ %s может присоединиться к вашему каналу",
+    rejectSuccess: "✅ %s был кикнут и заблокирован",
+    jailSuccess: "✅ %s был заключён",
+    welcomeDM: "Добро пожаловать на наш сервер! Пожалуйста, верифицируйтесь в #верификация"
+  },
+  french: {
+    setupStart: "Commençons la configuration. Veuillez copier/coller chaque ID tel qu'indiqué.",
+    setupComplete: "Configuration terminée ! 🎉",
+    languageSet: "Langue définie sur Français",
+    noVoiceChannel: "❌ Vous devez être dans un salon vocal",
+    tapOwned: "❌ Ce salon a déjà un propriétaire",
+    claimSuccess: "✅ Vous êtes maintenant propriétaire de ce salon!",
+    notOwner: "❌ Vous n'êtes pas propriétaire de ce salon",
+    permSuccess: "✅ %s peut maintenant rejoindre votre salon",
+    rejectSuccess: "✅ %s a été expulsé et bloqué",
+    jailSuccess: "✅ %s a été emprisonné",
+    welcomeDM: "Bienvenue sur notre serveur! Veuillez vous vérifier dans #vérification"
   }
-  // ... other languages
 };
 
 // ======================
-// 3. BOT SETUP (Your Original Structure)
+// 2. DATABASE CONNECTION
+// ======================
+const mongoClient = new MongoClient(process.env.MONGODB_URI, {
+  connectTimeoutMS: 10000,
+  socketTimeoutMS: 30000,
+  serverSelectionTimeoutMS: 10000
+});
+
+async function connectToMongo() {
+  try {
+    await mongoClient.connect();
+    console.log("✅ Connected to MongoDB");
+  } catch (err) {
+    console.error("❌ MongoDB connection failed:", err);
+    process.exit(1);
+  }
+}
+
+// ======================
+// 3. BOT CLIENT SETUP
 // ======================
 const client = new Client({
   intents: [
@@ -124,43 +190,16 @@ const client = new Client({
     GatewayIntentBits.GuildVoiceStates,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
-    GatewayIntentBits.DirectMessages,
-    GatewayIntentBits.GuildMessageReactions
+    GatewayIntentBits.DirectMessages
   ],
-  partials: [
-    Partials.Channel,
-    Partials.Message,
-    Partials.User,
-    Partials.GuildMember,
-    Partials.Reaction
-  ],
-  presence: {
-    status: 'online',
-    activities: [{
-      name: '/help for commands',
-      type: 3 // WATCHING
-    }]
-  }
+  partials: [Partials.Channel]
 });
 
 // ======================
-// 4. DATA STORES (Your Original + Enhanced)
-// ======================
-const dataStores = {
-  setup: new Map(), // guildId => setup state
-  verifications: new Map(), // channelId => {userId, verified}
-  taps: new Map(), // channelId => {ownerId, type, settings}
-  jail: new Map(), // userId => {reason, timestamp}
-  cooldowns: new Map(), // userId => last command time
-  welcomeDMs: new Set(), // userIds
-  commandUsage: new Map() // commandName => count
-};
-
-// ======================
-// 5. COMPLETE COMMAND SETUP (All Your Commands)
+// 4. COMMAND REGISTRATION
 // ======================
 const commands = [
-  // Verification
+  // Verification Commands
   new SlashCommandBuilder()
     .setName('boy')
     .setDescription('Verify user as boy')
@@ -171,101 +210,63 @@ const commands = [
     .setDescription('Verify user as girl')
     .setDefaultMemberPermissions(PermissionsBitField.Flags.ManageRoles),
 
-  // One-Tap Management
+  // One-Tap Commands
   new SlashCommandBuilder()
     .setName('claim')
     .setDescription('Claim ownership of current tap'),
   
   new SlashCommandBuilder()
-    .setName('lock')
-    .setDescription('Lock your tap channel'),
-  
-  new SlashCommandBuilder()
-    .setName('unlock')
-    .setDescription('Unlock your tap channel'),
-  
-  new SlashCommandBuilder()
     .setName('perm')
     .setDescription('Allow user to join your tap')
-    .addUserOption(option =>
-      option.setName('user')
-        .setDescription('User to permit')
-        .setRequired(true)),
+    .addUserOption(option => option.setName('user').setDescription('User to permit').setRequired(true)),
   
   new SlashCommandBuilder()
     .setName('reject')
     .setDescription('Kick and block user from your tap')
-    .addUserOption(option =>
-      option.setName('user')
-        .setDescription('User to reject')
-        .setRequired(true)),
-  
-  new SlashCommandBuilder()
-    .setName('kick')
-    .setDescription('Kick user from your tap')
-    .addUserOption(option =>
-      option.setName('user')
-        .setDescription('User to kick')
-        .setRequired(true)),
+    .addUserOption(option => option.setName('user').setDescription('User to reject').setRequired(true)),
 
-  // Moderation
+  // Moderation Commands
   new SlashCommandBuilder()
     .setName('jail')
     .setDescription('Jail a user')
-    .addUserOption(option =>
-      option.setName('user')
-        .setDescription('User to jail')
-        .setRequired(true))
-    .addStringOption(option =>
-      option.setName('reason')
-        .setDescription('Reason for jailing')
-        .setRequired(true))
-    .setDefaultMemberPermissions(PermissionsBitField.Flags.ModerateMembers),
-  
-  new SlashCommandBuilder()
-    .setName('unjail')
-    .setDescription('Unjail a user')
-    .addUserOption(option =>
-      option.setName('user')
-        .setDescription('User to unjail')
-        .setRequired(true))
+    .addUserOption(option => option.setName('user').setDescription('User to jail').setRequired(true))
+    .addStringOption(option => option.setName('reason').setDescription('Reason for jailing').setRequired(true))
     .setDefaultMemberPermissions(PermissionsBitField.Flags.ModerateMembers),
 
-  // Admin
+  // Admin Commands
   new SlashCommandBuilder()
     .setName('aji')
     .setDescription('Move user to your voice channel')
-    .addUserOption(option =>
-      option.setName('user')
-        .setDescription('User to move')
-        .setRequired(true))
-    .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
-
-  // Info
-  new SlashCommandBuilder()
-    .setName('profile')
-    .setDescription('View user profile')
-    .addUserOption(option =>
-      option.setName('user')
-        .setDescription('User to view')
-        .setRequired(false))
+    .addUserOption(option => option.setName('user').setDescription('User to move').setRequired(true))
+    .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator)
 ];
 
-// ======================
-// 6. EVENT HANDLERS (All Your Original Events)
-// ======================
+async function registerCommands() {
+  const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
+  try {
+    await rest.put(
+      Routes.applicationCommands(process.env.CLIENT_ID),
+      { body: commands.map(cmd => cmd.toJSON()) }
+    );
+    console.log("✅ Commands registered");
+  } catch (error) {
+    console.error("❌ Command registration failed:", error);
+  }
+}
 
+// ======================
+// 5. EVENT HANDLERS
+// ======================
 client.once(Events.ClientReady, async () => {
-  console.log(`✅ Logged in as ${client.user.tag}`);
+  console.log(`✅ Bot ready as ${client.user.tag}`);
   await connectToMongo();
   await registerCommands();
 });
 
 client.on(Events.GuildCreate, async guild => {
-  // Your original godfather approval system
   const owner = await guild.fetchOwner();
   const embed = new EmbedBuilder()
-    .setTitle("🆕 Guild Join Request")
+    .setTitle("🆕 New Guild Request")
     .setDescription(`Guild: ${guild.name}\nOwner: ${owner.user.tag}`);
 
   const buttons = new ActionRowBuilder().addComponents(
@@ -293,7 +294,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
   try {
     const { commandName } = interaction;
-    const config = await getGuildConfig(interaction.guild.id);
+    const config = await mongoClient.db().collection('serverSettings').findOne({ serverId: interaction.guild.id });
     const lang = config?.language || 'english';
 
     switch(commandName) {
@@ -315,14 +316,8 @@ client.on(Events.InteractionCreate, async interaction => {
       case 'jail':
         await handleJailUser(interaction, config);
         break;
-      case 'unjail':
-        await handleUnjailUser(interaction, config);
-        break;
       case 'aji':
         await handleAjiCommand(interaction);
-        break;
-      case 'profile':
-        await handleProfileCommand(interaction);
         break;
     }
   } catch (error) {
@@ -331,16 +326,8 @@ client.on(Events.InteractionCreate, async interaction => {
   }
 });
 
-client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
-  // Your original voice state handling logic
-  // - Verification channel handling
-  // - One-Tap channel creation
-  // - Need-Help system
-  // - Automatic cleanup
-});
-
 client.on(Events.MessageCreate, async message => {
-  // Your original "R" profile viewer
+  if (message.author.bot) return;
   if (message.content.toLowerCase() === 'r') {
     const target = message.mentions.users.first() || message.author;
     const embed = new EmbedBuilder()
@@ -363,9 +350,8 @@ client.on(Events.MessageCreate, async message => {
 });
 
 // ======================
-// 7. COMPLETE COMMAND HANDLERS (All Your Features)
+// 6. COMMAND HANDLERS
 // ======================
-
 async function handleClaimTap(interaction, lang) {
   if (!interaction.member.voice?.channel) {
     return interaction.reply({
@@ -375,7 +361,7 @@ async function handleClaimTap(interaction, lang) {
   }
 
   const channel = interaction.member.voice.channel;
-  const existing = await getTapData(channel.id);
+  const existing = await mongoClient.db().collection('taps').findOne({ channelId: channel.id });
 
   if (existing && channel.members.has(existing.ownerId)) {
     return interaction.reply({
@@ -384,11 +370,11 @@ async function handleClaimTap(interaction, lang) {
     });
   }
 
-  await saveTapData(channel.id, {
-    ownerId: interaction.user.id,
-    language: lang,
-    createdAt: Date.now()
-  });
+  await mongoClient.db().collection('taps').updateOne(
+    { channelId: channel.id },
+    { $set: { ownerId: interaction.user.id, language: lang } },
+    { upsert: true }
+  );
 
   await interaction.reply({
     content: languageExtras[lang].claimSuccess,
@@ -407,7 +393,7 @@ async function handlePermUser(interaction, lang) {
     });
   }
 
-  const tapData = await getTapData(channel.id);
+  const tapData = await mongoClient.db().collection('taps').findOne({ channelId: channel.id });
   if (!tapData || tapData.ownerId !== interaction.user.id) {
     return interaction.reply({
       content: languageExtras[lang].notOwner,
@@ -433,7 +419,7 @@ async function handleRejectUser(interaction, lang) {
     });
   }
 
-  const tapData = await getTapData(channel.id);
+  const tapData = await mongoClient.db().collection('taps').findOne({ channelId: channel.id });
   if (!tapData || tapData.ownerId !== interaction.user.id) {
     return interaction.reply({
       content: languageExtras[lang].notOwner,
@@ -457,10 +443,6 @@ async function handleRejectUser(interaction, lang) {
 }
 
 async function handleJailUser(interaction, config) {
-  if (!interaction.member.permissions.has(PermissionsBitField.Flags.ModerateMembers)) {
-    return interaction.reply({ content: "❌ No permission", ephemeral: true });
-  }
-
   const user = interaction.options.getUser('user');
   const reason = interaction.options.getString('reason');
   const member = await interaction.guild.members.fetch(user.id);
@@ -497,48 +479,31 @@ async function handleJailUser(interaction, config) {
   }
 
   await interaction.reply({
-    content: `✅ ${user.tag} has been jailed. Reason: ${reason}`,
+    content: languageExtras[config.language || 'english'].jailSuccess.replace('%s', user.username),
     ephemeral: false
   });
 }
 
-// ... (all your other command handlers)
-
-// ======================
-// 8. UTILITY FUNCTIONS
-// ======================
-
-async function registerCommands() {
-  const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
-  try {
-    await rest.put(
-      Routes.applicationCommands(process.env.CLIENT_ID),
-      { body: commands.map(cmd => cmd.toJSON()) }
-    );
-    console.log("✅ Commands registered");
-  } catch (error) {
-    console.error("❌ Command registration failed:", error);
+async function handleAjiCommand(interaction) {
+  const user = interaction.options.getUser('user');
+  const member = await interaction.guild.members.fetch(user.id);
+  
+  if (!interaction.member.voice?.channel) {
+    return interaction.reply({
+      content: "❌ You must be in a voice channel",
+      ephemeral: true
+    });
   }
-}
 
-async function getGuildConfig(guildId) {
-  return await mongoClient.db().collection('serverSettings').findOne({ serverId: guildId });
-}
-
-async function getTapData(channelId) {
-  return await mongoClient.db().collection('taps').findOne({ channelId });
-}
-
-async function saveTapData(channelId, data) {
-  await mongoClient.db().collection('taps').updateOne(
-    { channelId },
-    { $set: data },
-    { upsert: true }
-  );
+  await member.voice.setChannel(interaction.member.voice.channel);
+  await interaction.reply({
+    content: `✅ ${user.username} moved to your channel`,
+    ephemeral: false
+  });
 }
 
 // ======================
-// 9. START THE BOT
+// 7. START THE BOT
 // ======================
 client.login(process.env.DISCORD_TOKEN)
   .catch(err => {
